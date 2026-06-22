@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cymatrix-dark: #0a0a0a;
+  --color-cymatrix-highlight: #00ffff;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-cymatrix-dark);
+  color: white;
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}

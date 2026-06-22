@@ -1,0 +1,34 @@
+import * as THREE from 'three';
+import { shaderMaterial } from '@react-three/drei';
+import { extend } from '@react-three/fiber';
+import vertexShader from '../../shaders/cymatic.vert?raw';
+import fragmentShader from '../../shaders/cymatic.frag?raw';
+
+const CymaticMaterial = shaderMaterial(
+  {
+    uTime: 0,
+    uFrequency: 440.0,
+    uAmplitude: 0.0,
+    uSymmetry: 6.0,
+    uResolution: new THREE.Vector2(),
+    uThickness: 0.02,
+    uBrightness: 1.0,
+    uSpeed: 1.0,
+    uMode: 1, // 0 = Mandala, 1 = Chladni, 2 = Ripple
+  },
+  vertexShader,
+  fragmentShader
+);
+
+extend({ CymaticMaterial });
+
+// Add types for React Three Fiber
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      cymaticMaterial: any;
+    }
+  }
+}
+
+export { CymaticMaterial };
