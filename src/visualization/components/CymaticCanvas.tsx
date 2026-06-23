@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { audioEngine } from '../../audio/AudioEngine';
 import { useAppStore } from '../../store/useAppStore';
 import { CymaticMaterial } from '../materials/CymaticMaterial';
+import { isMobileDevice } from '../../utils/device';
 
 const CymaticPlane = () => {
   const materialRef = useRef<any>(null);
@@ -72,10 +73,23 @@ const CymaticPlane = () => {
 };
 
 export const CymaticCanvas: React.FC = () => {
+  const isMobile = useAppStore((state) => state.isMobile);
+  const setIsMobile = useAppStore((state) => state.setIsMobile);
+
+  React.useEffect(() => {
+    const checkDevice = () => {
+      setIsMobile(isMobileDevice());
+    };
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    return () => window.removeEventListener('resize', checkDevice);
+  }, [setIsMobile]);
+
   return (
     <div className="w-full h-full absolute inset-0 z-0 bg-[#020202]">
       <Canvas
         camera={{ position: [0, 0, 1] }}
+        dpr={isMobile ? 1.0 : [1, 1.5]}
         gl={{ 
           antialias: false, 
           powerPreference: 'high-performance',
@@ -90,10 +104,10 @@ export const CymaticCanvas: React.FC = () => {
         {/* Post-processing Bloom for glowing lines */}
         <EffectComposer>
           <Bloom 
-            intensity={1.5} 
+            intensity={isMobile ? 0.7 : 1.5} 
             luminanceThreshold={0.15} 
             luminanceSmoothing={0.9} 
-            mipmapBlur
+            mipmapBlur={!isMobile}
           />
         </EffectComposer>
       </Canvas>

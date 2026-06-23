@@ -57,6 +57,13 @@ export class AudioEngine {
     this.damping = damp;
   }
 
+  public async resumeContext() {
+    await this.init();
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
+  }
+
   public setFrequency(freq: number) {
     this.frequency = freq;
     if (this.oscillator && this.inputMode === 'oscillator') {

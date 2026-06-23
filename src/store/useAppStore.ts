@@ -53,6 +53,8 @@ interface AppState {
   speed: number;
   isPlaying: boolean;
   fftSize: number;
+  isControlsOpen: boolean;
+  isMobile: boolean;
   
   // Actions
   setVisualizationMode: (mode: VisMode) => void;
@@ -65,6 +67,8 @@ interface AppState {
   setSpeed: (speed: number) => void;
   setIsPlaying: (isPlaying: boolean) => void;
   setFftSize: (size: number) => void;
+  setControlsOpen: (open: boolean) => void;
+  setIsMobile: (mobile: boolean) => void;
   applyPreset: (presetName: keyof typeof PRESETS) => void;
   resetSettings: () => void;
 }
@@ -80,6 +84,8 @@ const DEFAULT_STATE = {
   speed: 1.0,
   isPlaying: false,
   fftSize: 2048,
+  isControlsOpen: true,
+  isMobile: false,
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -95,6 +101,8 @@ export const useAppStore = create<AppState>((set) => ({
   setSpeed: (speed) => set({ speed }),
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   setFftSize: (fftSize) => set({ fftSize }),
+  setControlsOpen: (isControlsOpen) => set({ isControlsOpen }),
+  setIsMobile: (isMobile) => set({ isMobile }),
   
   applyPreset: (presetName) => {
     const preset = PRESETS[presetName];
