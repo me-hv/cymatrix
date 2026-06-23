@@ -18,3 +18,60 @@ body {
   width: 100vw;
   height: 100vh;
 }
+
+/* Minimalist Studio Slider Styling */
+.minimal-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: #27272a;
+  outline: none;
+  cursor: pointer;
+}
+
+.minimal-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 2px;
+  background: #27272a;
+}
+
+.minimal-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00ffff; /* Cyan 400 */
+  cursor: pointer;
+  margin-top: -4px; /* Center thumb vertically on 2px track */
+  border: none;
+  box-shadow: none;
+  transition: transform 0.1s ease;
+}
+
+.minimal-slider::-webkit-slider-thumb:active {
+  transform: scale(1.2);
+}
+
+.minimal-slider::-moz-range-track {
+  width: 100%;
+  height: 2px;
+  background: #27272a;
+}
+
+.minimal-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00ffff;
+  cursor: pointer;
+  border: none;
+  box-shadow: none;
+  transition: transform 0.1s ease;
+}
+
+.minimal-slider::-moz-range-thumb:active {
+  transform: scale(1.2);
+}
+

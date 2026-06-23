@@ -2,7 +2,7 @@ import { Sidebar } from './components/Sidebar';
 import { CymaticCanvas } from './visualization/components/CymaticCanvas';
 import { SpectrumAnalyzer } from './components/SpectrumAnalyzer';
 import { useAppStore } from './store/useAppStore';
-import { Sliders } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 function App() {
   const isControlsOpen = useAppStore((state) => state.isControlsOpen);
@@ -12,14 +12,14 @@ function App() {
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#020202] text-white flex select-none font-sans relative">
       
-      {/* Floating Toggle Controls Button (visible when sidebar/sheet is closed) */}
+      {/* Floating Toggle Controls Button (Minimal Studio Style, no glows) */}
       {!isControlsOpen && (
         <button
           onClick={() => setControlsOpen(true)}
-          className="absolute top-6 left-6 z-30 flex items-center gap-2 px-4 py-3 rounded-xl border border-white/10 bg-[#0a0a0c]/85 hover:bg-[#0a0a0c] text-cyan-400 hover:text-cyan-300 font-bold text-xs md:text-sm tracking-wider uppercase transition-all active:scale-95 shadow-[0_0_15px_rgba(0,255,255,0.15)] backdrop-blur-md"
+          className="absolute top-6 left-6 z-30 flex items-center gap-2 px-3 py-2 rounded border border-zinc-800 bg-[#08080a] hover:bg-zinc-900 text-cyan-400 hover:text-cyan-300 font-bold text-[10px] tracking-widest uppercase transition-all active:scale-95"
         >
-          <Sliders className="w-4 h-4" />
-          <span>Show Controls</span>
+          <Menu className="w-3.5 h-3.5" />
+          <span>Controls</span>
         </button>
       )}
 
@@ -35,7 +35,7 @@ function App() {
           
           {/* Subtle HUD Overlay (hidden on mobile to save screen estate) */}
           {!isMobile && (
-            <div className="absolute top-6 right-6 z-10 pointer-events-none flex flex-col items-end gap-1 font-mono text-[10px] text-gray-500 bg-black/30 backdrop-blur-sm p-3 rounded-lg border border-white/5">
+            <div className="absolute top-6 right-6 z-10 pointer-events-none flex flex-col items-end gap-1 font-mono text-[9px] text-zinc-600 bg-black/30 backdrop-blur-sm p-3 rounded border border-zinc-800/40">
               <span className="text-cyan-400 font-bold">CYMATRIX ACTIVE</span>
               <span>ENGINE: WEBGL GLSL SHADERS</span>
               <span>BLENDING: ADDITIVE BLOOM</span>
