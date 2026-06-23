@@ -26,6 +26,7 @@ export const ControlRow: React.FC<ControlRowProps> = ({
 
   // Sync local text input when global value changes (e.g. via preset or slider drag)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTextVal(value.toFixed(displayPrecision));
   }, [value, displayPrecision]);
 

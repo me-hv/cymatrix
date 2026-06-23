@@ -6,8 +6,11 @@ import { audioEngine } from '../../audio/AudioEngine';
 import { useAppStore } from '../../store/useAppStore';
 import { CymaticMaterial } from '../materials/CymaticMaterial';
 import { isMobileDevice } from '../../utils/device';
+import { registerWebGLContext } from '../../utils/export';
 
-const CymaticPlane = () => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const materialRef = useRef<any>(null);
   const { size } = useThree();
 
@@ -21,6 +24,9 @@ const CymaticPlane = () => {
     // 1. Get latest audio values
     audioEngine.update();
 
+    // Register WebGL elements for snapshot utility
+    registerWebGLContext(state.gl, state.scene, state.camera, composerRef.current);
+
     // 2. Fetch latest UI settings from Zustand store without triggering re-renders
     const settings = useAppStore.getState();
 
@@ -29,9 +35,11 @@ const CymaticPlane = () => {
     audioEngine.setDamping(settings.damping);
     audioEngine.setVolume(settings.gain);
     
-    // In oscillator mode, ensure the engine frequency matches the slider/UI value
+    // In oscillator mode, ensure the engine parameters match the mixer/UI values
     if (audioEngine.inputMode === 'oscillator') {
-      audioEngine.setFrequency(settings.frequency);
+      audioEngine.setOscillatorParams('A', settings.oscA.enabled, settings.oscA.frequency, settings.oscA.gain);
+      audioEngine.setOscillatorParams('B', settings.oscB.enabled, settings.oscB.frequency, settings.oscB.gain);
+      audioEngine.setOscillatorParams('C', settings.oscC.enabled, settings.oscC.frequency, settings.oscC.gain);
     }
 
     // 4. Update shader uniforms directly on the GPU
@@ -44,6 +52,25 @@ const CymaticPlane = () => {
       materialRef.current.uThickness = settings.thickness;
       materialRef.current.uBrightness = settings.brightness;
       materialRef.current.uSpeed = settings.speed;
+
+      const globalAmp = audioEngine.amplitude;
+      if (audioEngine.inputMode === 'oscillator') {
+        materialRef.current.uFreqA = settings.oscA.enabled ? settings.oscA.frequency : 0.0;
+        materialRef.current.uFreqB = settings.oscB.enabled ? settings.oscB.frequency : 0.0;
+        materialRef.current.uFreqC = settings.oscC.enabled ? settings.oscC.frequency : 0.0;
+
+        materialRef.current.uAmpA = settings.oscA.enabled ? settings.oscA.gain * globalAmp : 0.0;
+        materialRef.current.uAmpB = settings.oscB.enabled ? settings.oscB.gain * globalAmp : 0.0;
+        materialRef.current.uAmpC = settings.oscC.enabled ? settings.oscC.gain * globalAmp : 0.0;
+      } else {
+        // Fallback for mic / file upload modes
+        materialRef.current.uFreqA = audioEngine.frequency;
+        materialRef.current.uAmpA = globalAmp;
+        materialRef.current.uFreqB = 0.0;
+        materialRef.current.uAmpB = 0.0;
+        materialRef.current.uFreqC = 0.0;
+        materialRef.current.uAmpC = 0.0;
+      }
 
       // Map string mode to integer: mandala=0, chladni=1, ripple=2
       let modeInt = 1;
@@ -75,6 +102,8 @@ const CymaticPlane = () => {
 export const CymaticCanvas: React.FC = () => {
   const isMobile = useAppStore((state) => state.isMobile);
   const setIsMobile = useAppStore((state) => state.setIsMobile);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const composerRef = useRef<any>(null);
 
   React.useEffect(() => {
     const checkDevice = () => {
@@ -96,17 +125,18 @@ export const CymaticCanvas: React.FC = () => {
           alpha: false,
           stencil: false,
           depth: false,
+          preserveDrawingBuffer: true,
         }}
         style={{ width: '100%', height: '100%' }}
       >
-        <CymaticPlane />
+        <CymaticPlane composerRef={composerRef} />
         
         {/* Post-processing Bloom for glowing lines */}
-        <EffectComposer>
+        <EffectComposer ref={composerRef}>
           <Bloom 
-            intensity={isMobile ? 0.7 : 1.5} 
-            luminanceThreshold={0.15} 
-            luminanceSmoothing={0.9} 
+            intensity={isMobile ? 0.45 : 0.8} 
+            luminanceThreshold={0.55} 
+            luminanceSmoothing={0.45} 
             mipmapBlur={!isMobile}
           />
         </EffectComposer>

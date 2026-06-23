@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-namespace */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
 import { shaderMaterial } from '@react-three/drei';
 import { extend } from '@react-three/fiber';
@@ -9,6 +11,12 @@ const CymaticMaterial = shaderMaterial(
     uTime: 0,
     uFrequency: 440.0,
     uAmplitude: 0.0,
+    uFreqA: 0.0,
+    uFreqB: 0.0,
+    uFreqC: 0.0,
+    uAmpA: 0.0,
+    uAmpB: 0.0,
+    uAmpC: 0.0,
     uSymmetry: 6.0,
     uResolution: new THREE.Vector2(),
     uThickness: 0.02,

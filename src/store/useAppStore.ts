@@ -42,6 +42,12 @@ export const PRESETS: Record<string, Preset> = {
   },
 };
 
+export interface OscillatorConfig {
+  enabled: boolean;
+  frequency: number;
+  gain: number;
+}
+
 interface AppState {
   visualizationMode: VisMode;
   frequency: number;
@@ -53,8 +59,14 @@ interface AppState {
   speed: number;
   isPlaying: boolean;
   fftSize: number;
-  isControlsOpen: boolean;
+  isLeftSidebarOpen: boolean;
+  isRightSidebarOpen: boolean;
   isMobile: boolean;
+
+  // Polyphonic Oscillator State
+  oscA: OscillatorConfig;
+  oscB: OscillatorConfig;
+  oscC: OscillatorConfig;
   
   // Actions
   setVisualizationMode: (mode: VisMode) => void;
@@ -67,10 +79,16 @@ interface AppState {
   setSpeed: (speed: number) => void;
   setIsPlaying: (isPlaying: boolean) => void;
   setFftSize: (size: number) => void;
-  setControlsOpen: (open: boolean) => void;
+  setLeftSidebarOpen: (open: boolean) => void;
+  setRightSidebarOpen: (open: boolean) => void;
   setIsMobile: (mobile: boolean) => void;
   applyPreset: (presetName: keyof typeof PRESETS) => void;
   resetSettings: () => void;
+
+  setOscA: (config: Partial<OscillatorConfig>) => void;
+  setOscB: (config: Partial<OscillatorConfig>) => void;
+  setOscC: (config: Partial<OscillatorConfig>) => void;
+  setHarmonicInterval: (interval: 'fifth' | 'third' | 'octave') => void;
 }
 
 const DEFAULT_STATE = {
@@ -84,15 +102,24 @@ const DEFAULT_STATE = {
   speed: 1.0,
   isPlaying: false,
   fftSize: 2048,
-  isControlsOpen: true,
+  isLeftSidebarOpen: true,
+  isRightSidebarOpen: true,
   isMobile: false,
+
+  oscA: { enabled: true, frequency: 440, gain: 0.5 },
+  oscB: { enabled: false, frequency: 660, gain: 0.5 },
+  oscC: { enabled: false, frequency: 880, gain: 0.5 },
 };
 
 export const useAppStore = create<AppState>((set) => ({
   ...DEFAULT_STATE,
   
   setVisualizationMode: (visualizationMode) => set({ visualizationMode }),
-  setFrequency: (frequency) => set({ frequency }),
+  setFrequency: (frequency) => set((state) => ({ 
+    frequency,
+    // Keep oscA frequency in sync if master frequency updates
+    oscA: { ...state.oscA, frequency },
+  })),
   setSymmetry: (symmetry) => set({ symmetry }),
   setDamping: (damping) => set({ damping }),
   setBrightness: (brightness) => set({ brightness }),
@@ -101,7 +128,8 @@ export const useAppStore = create<AppState>((set) => ({
   setSpeed: (speed) => set({ speed }),
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   setFftSize: (fftSize) => set({ fftSize }),
-  setControlsOpen: (isControlsOpen) => set({ isControlsOpen }),
+  setLeftSidebarOpen: (isLeftSidebarOpen) => set({ isLeftSidebarOpen }),
+  setRightSidebarOpen: (isRightSidebarOpen) => set({ isRightSidebarOpen }),
   setIsMobile: (isMobile) => set({ isMobile }),
   
   applyPreset: (presetName) => {
@@ -114,9 +142,36 @@ export const useAppStore = create<AppState>((set) => ({
         speed: preset.speed,
         damping: preset.damping,
         brightness: preset.brightness,
+        oscA: { enabled: true, frequency: preset.frequency, gain: 0.5 },
+        oscB: { enabled: true, frequency: Math.round(preset.frequency * 1.5), gain: 0.35 },
+        oscC: { enabled: true, frequency: Math.round(preset.frequency * 2.0), gain: 0.25 },
       });
     }
   },
   
   resetSettings: () => set(DEFAULT_STATE),
+
+  setOscA: (oscA) => set((state) => ({ oscA: { ...state.oscA, ...oscA } })),
+  setOscB: (oscB) => set((state) => ({ oscB: { ...state.oscB, ...oscB } })),
+  setOscC: (oscC) => set((state) => ({ oscC: { ...state.oscC, ...oscC } })),
+  
+  setHarmonicInterval: (interval) => set((state) => {
+    const baseFreq = state.oscA.frequency;
+    if (interval === 'fifth') {
+      return {
+        oscB: { ...state.oscB, enabled: true, frequency: Math.round(baseFreq * 1.5) },
+        oscC: { ...state.oscC, enabled: true, frequency: Math.round(baseFreq * 2.0) },
+      };
+    } else if (interval === 'third') {
+      return {
+        oscB: { ...state.oscB, enabled: true, frequency: Math.round(baseFreq * 1.25) },
+        oscC: { ...state.oscC, enabled: true, frequency: Math.round(baseFreq * 1.5) },
+      };
+    } else { // octave
+      return {
+        oscB: { ...state.oscB, enabled: true, frequency: Math.round(baseFreq * 2.0) },
+        oscC: { ...state.oscC, enabled: true, frequency: Math.round(baseFreq * 4.0) },
+      };
+    }
+  }),
 }));

@@ -4,6 +4,14 @@ uniform float uAmplitude;
 uniform float uSymmetry;
 uniform vec2 uResolution;
 
+// Polyphonic Oscillator Uniforms
+uniform float uFreqA;
+uniform float uFreqB;
+uniform float uFreqC;
+uniform float uAmpA;
+uniform float uAmpB;
+uniform float uAmpC;
+
 // Pro Visual Parameters
 uniform float uThickness;
 uniform float uBrightness;
@@ -16,6 +24,42 @@ varying vec2 vUv;
 
 // Fast pseudo-random generator for detail
 float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+// Helper function for Chladni component displacement
+float getChladni(vec2 symSt, float r, float t, float freq, float amp) {
+  if (freq <= 0.0 || amp <= 0.0) return 0.0;
+  float baseFreq = clamp(freq, 20.0, 2000.0);
+  float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
+  float m = n * 1.618;
+  float wave = sin(r * 12.0 - t * 2.5) * (0.04 + amp * 0.08);
+  float x = symSt.x + wave;
+  float y = symSt.y + wave;
+  return cos(n * x * PI) * cos(m * y * PI) - cos(m * x * PI) * cos(n * y * PI);
+}
+
+// Helper function for Mandala component displacement
+float getMandala(vec2 symSt, float r, float t, float freq, float amp, float symAngle, float symmetry) {
+  if (freq <= 0.0 || amp <= 0.0) return 0.0;
+  float baseFreq = clamp(freq, 20.0, 2000.0);
+  float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
+  float wave = cos(r * 8.0 - t * 1.5) * (0.03 + amp * 0.05);
+  float rDistorted = r + wave;
+  
+  float rings = sin(rDistorted * n * PI - t);
+  float spokes = cos(symAngle * symmetry);
+  float val = rings * spokes;
+  val += 0.4 * sin(rDistorted * n * 2.0 * PI) * cos(symAngle * symmetry * 2.0 - t);
+  return val;
+}
+
+// Helper function for Ripple component displacement
+float getRipple(float r, float t, float freq, float amp, float symAngle, float symmetry) {
+  if (freq <= 0.0 || amp <= 0.0) return 0.0;
+  float baseFreq = clamp(freq, 20.0, 2000.0);
+  float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
+  float angularDistortion = sin(symAngle * symmetry - t) * (0.1 + amp * 0.2);
+  return sin((r + angularDistortion) * n * PI - t * 4.0);
+}
 
 void main() {
   // Center coordinates to range -1.0 to 1.0
@@ -33,62 +77,82 @@ void main() {
   symAngle = abs(symAngle - sector * 0.5);
   vec2 symSt = vec2(cos(symAngle), sin(symAngle)) * r;
 
-  // Logarithmic frequency scale (normalizing typical range 20Hz-2000Hz)
-  float baseFreq = clamp(uFrequency, 20.0, 2000.0);
-  float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
-  float m = n * 1.618; // Golden ratio multiplier for complexity
-
   // Time scaled by speed
   float t = uTime * uSpeed;
 
   float val = 0.0;
+  
+  // Count active oscillators and compute total amplitude
+  float activeOscCount = 0.0;
+  float totalAmp = 0.0;
+  if (uFreqA > 0.0 && uAmpA > 0.0) { activeOscCount += 1.0; totalAmp += uAmpA; }
+  if (uFreqB > 0.0 && uAmpB > 0.0) { activeOscCount += 1.0; totalAmp += uAmpB; }
+  if (uFreqC > 0.0 && uAmpC > 0.0) { activeOscCount += 1.0; totalAmp += uAmpC; }
 
   if (uMode == 1) {
-    // Mode 1: Chladni-inspired
-    // Coordinates distorted by dynamic wave action & amplitude
-    float wave = sin(r * 12.0 - t * 2.5) * (0.04 + uAmplitude * 0.08);
-    float x = symSt.x + wave;
-    float y = symSt.y + wave;
+    // Mode 1: Chladni-inspired Additive
+    float valA = getChladni(symSt, r, t, uFreqA, uAmpA);
+    float valB = getChladni(symSt, r, t, uFreqB, uAmpB);
+    float valC = getChladni(symSt, r, t, uFreqC, uAmpC);
     
-    val = cos(n * x * PI) * cos(m * y * PI) - cos(m * x * PI) * cos(n * y * PI);
+    float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
     
+    if (activeOscCount > 0.0) {
+      float avgAmp = totalAmp / activeOscCount;
+      // Normalization: divide total displacement by number of active oscillators
+      // scaled by average amplitude to maintain consistent visual line thickness
+      val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
+    } else {
+      // Fallback to legacy single mode using legacy uniforms
+      val = getChladni(symSt, r, t, uFrequency, uAmplitude);
+    }
   } else if (uMode == 0) {
-    // Mode 0: Mandala
-    // Multiple overlapping rings and symmetry components
-    float wave = cos(r * 8.0 - t * 1.5) * (0.03 + uAmplitude * 0.05);
-    float rDistorted = r + wave;
+    // Mode 0: Mandala Additive
+    float valA = getMandala(symSt, r, t, uFreqA, uAmpA, symAngle, uSymmetry);
+    float valB = getMandala(symSt, r, t, uFreqB, uAmpB, symAngle, uSymmetry);
+    float valC = getMandala(symSt, r, t, uFreqC, uAmpC, symAngle, uSymmetry);
     
-    // Main ring system
-    float rings = sin(rDistorted * n * PI - t);
-    // Symmetry spokes
-    float spokes = cos(symAngle * uSymmetry);
-    // Combined
-    val = rings * spokes;
+    float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
     
-    // Add harmonic detail (higher order rings)
-    val += 0.4 * sin(rDistorted * n * 2.0 * PI) * cos(symAngle * uSymmetry * 2.0 - t);
-    
+    if (activeOscCount > 0.0) {
+      float avgAmp = totalAmp / activeOscCount;
+      val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
+    } else {
+      val = getMandala(symSt, r, t, uFrequency, uAmplitude, symAngle, uSymmetry);
+    }
   } else {
-    // Mode 2: Water Ripple
-    // concentric rings expanding outward, distorted by angle and amplitude
-    float angularDistortion = sin(symAngle * uSymmetry - t) * (0.1 + uAmplitude * 0.2);
-    val = sin((r + angularDistortion) * n * PI - t * 4.0);
+    // Mode 2: Water Ripple Additive
+    float valA = getRipple(r, t, uFreqA, uAmpA, symAngle, uSymmetry);
+    float valB = getRipple(r, t, uFreqB, uAmpB, symAngle, uSymmetry);
+    float valC = getRipple(r, t, uFreqC, uAmpC, symAngle, uSymmetry);
+    
+    float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
+    
+    if (activeOscCount > 0.0) {
+      float avgAmp = totalAmp / activeOscCount;
+      val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
+    } else {
+      val = getRipple(r, t, uFrequency, uAmplitude, symAngle, uSymmetry);
+    }
   }
 
-  // Calculate line thickness and glow based on amplitude
-  // Let the userthickness parameter guide the base line width
-  float baseThickness = uThickness * (1.0 - uAmplitude * 0.3);
-  float glowWidth = baseThickness * 4.0 + uAmplitude * 0.15;
+  // Calculate line thickness and glow based on maximum active amplitude
+  float activeAmp = max(max(uAmpA, uAmpB), uAmpC);
+  if (activeOscCount <= 0.0) {
+    activeAmp = uAmplitude;
+  }
+  
+  float baseThickness = uThickness * (1.0 - activeAmp * 0.3);
+  float glowWidth = baseThickness * 4.0 + activeAmp * 0.15;
   
   float dist = abs(val);
   
   // High contrast crisp line using smoothstep
   float stroke = smoothstep(baseThickness + 0.005, baseThickness, dist);
-  // Additive glow bleed representation
-  float glow = exp(-dist * (4.0 / glowWidth));
+  // Additive glow bleed representation (tightened from 4.0 to 8.0 for edge highlighting)
+  float glow = exp(-dist * (8.0 / glowWidth));
 
   // Visual style: Dark background with gradient color mapping
-  // Center is white/cyan, mid is cyan/electric blue, outer is deep purple/blue
   vec3 whiteCyan = vec3(0.85, 1.0, 1.0);
   vec3 electricCyan = vec3(0.0, 0.9, 1.0);
   vec3 deepBlue = vec3(0.05, 0.2, 0.95);
@@ -97,7 +161,6 @@ void main() {
   // Gradient mapping based on radius r
   vec3 baseColor = mix(electricCyan, deepBlue, smoothstep(0.1, 0.5, r));
   baseColor = mix(baseColor, deepPurple, smoothstep(0.5, 0.9, r));
-  // White hot center
   baseColor = mix(whiteCyan, baseColor, smoothstep(0.0, 0.2, r));
 
   // Blend stroke, glow and apply global brightness control

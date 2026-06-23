@@ -1,6 +1,11 @@
 export class AudioEngine {
   private audioContext: AudioContext | null = null;
-  private oscillator: OscillatorNode | null = null;
+  private oscA: OscillatorNode | null = null;
+  private oscB: OscillatorNode | null = null;
+  private oscC: OscillatorNode | null = null;
+  private gainA: GainNode | null = null;
+  private gainB: GainNode | null = null;
+  private gainC: GainNode | null = null;
   private gainNode: GainNode | null = null;
   private analyzer: AnalyserNode | null = null;
   private microphoneSource: MediaStreamAudioSourceNode | null = null;
@@ -31,7 +36,7 @@ export class AudioEngine {
 
   public async init() {
     if (this.audioContext) return;
-    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    this.audioContext = new (window.AudioContext || (window as unknown as Record<string, typeof AudioContext>).webkitAudioContext)();
     this.analyzer = this.audioContext.createAnalyser();
     this.setFftSize(this.fftSize);
   }
@@ -66,33 +71,89 @@ export class AudioEngine {
 
   public setFrequency(freq: number) {
     this.frequency = freq;
-    if (this.oscillator && this.inputMode === 'oscillator') {
-      this.oscillator.frequency.setTargetAtTime(freq, this.audioContext!.currentTime, 0.05);
+    if (this.oscA && this.inputMode === 'oscillator') {
+      this.oscA.frequency.setTargetAtTime(freq, this.audioContext!.currentTime, 0.05);
     }
   }
 
-  public playTestTone(hz: number = 440) {
+  public setOscillatorParams(
+    id: 'A' | 'B' | 'C',
+    enabled: boolean,
+    frequency: number,
+    gainVal: number
+  ) {
+    const osc = id === 'A' ? this.oscA : id === 'B' ? this.oscB : this.oscC;
+    const gainNode = id === 'A' ? this.gainA : id === 'B' ? this.gainB : this.gainC;
+
+    if (this.audioContext && this.inputMode === 'oscillator') {
+      const time = this.audioContext.currentTime;
+      if (osc) {
+        osc.frequency.setTargetAtTime(frequency, time, 0.05);
+      }
+      if (gainNode) {
+        const targetGain = enabled ? gainVal : 0;
+        gainNode.gain.setTargetAtTime(targetGain, time, 0.05);
+      }
+    }
+  }
+
+  public playTestTone(
+    oscConfigs: {
+      oscA: { enabled: boolean; frequency: number; gain: number };
+      oscB: { enabled: boolean; frequency: number; gain: number };
+      oscC: { enabled: boolean; frequency: number; gain: number };
+    } = {
+      oscA: { enabled: true, frequency: 440, gain: 0.5 },
+      oscB: { enabled: false, frequency: 660, gain: 0.5 },
+      oscC: { enabled: false, frequency: 880, gain: 0.5 },
+    }
+  ) {
     this.init();
     this.stopAllSources();
     this.inputMode = 'oscillator';
-    this.frequency = hz;
+    this.frequency = oscConfigs.oscA.frequency;
 
     if (this.audioContext!.state === 'suspended') {
       this.audioContext!.resume();
     }
 
-    this.oscillator = this.audioContext!.createOscillator();
     this.gainNode = this.audioContext!.createGain();
-
-    this.oscillator.type = 'sine';
-    this.oscillator.frequency.setValueAtTime(hz, this.audioContext!.currentTime);
     this.gainNode.gain.setValueAtTime(this.volume, this.audioContext!.currentTime);
 
-    this.oscillator.connect(this.gainNode);
+    // Set up OSC A
+    this.oscA = this.audioContext!.createOscillator();
+    this.gainA = this.audioContext!.createGain();
+    this.oscA.type = 'sine';
+    this.oscA.frequency.setValueAtTime(oscConfigs.oscA.frequency, this.audioContext!.currentTime);
+    this.gainA.gain.setValueAtTime(oscConfigs.oscA.enabled ? oscConfigs.oscA.gain : 0, this.audioContext!.currentTime);
+    this.oscA.connect(this.gainA);
+    this.gainA.connect(this.gainNode);
+
+    // Set up OSC B
+    this.oscB = this.audioContext!.createOscillator();
+    this.gainB = this.audioContext!.createGain();
+    this.oscB.type = 'sine';
+    this.oscB.frequency.setValueAtTime(oscConfigs.oscB.frequency, this.audioContext!.currentTime);
+    this.gainB.gain.setValueAtTime(oscConfigs.oscB.enabled ? oscConfigs.oscB.gain : 0, this.audioContext!.currentTime);
+    this.oscB.connect(this.gainB);
+    this.gainB.connect(this.gainNode);
+
+    // Set up OSC C
+    this.oscC = this.audioContext!.createOscillator();
+    this.gainC = this.audioContext!.createGain();
+    this.oscC.type = 'sine';
+    this.oscC.frequency.setValueAtTime(oscConfigs.oscC.frequency, this.audioContext!.currentTime);
+    this.gainC.gain.setValueAtTime(oscConfigs.oscC.enabled ? oscConfigs.oscC.gain : 0, this.audioContext!.currentTime);
+    this.oscC.connect(this.gainC);
+    this.gainC.connect(this.gainNode);
+
     this.gainNode.connect(this.analyzer!);
     this.analyzer!.connect(this.audioContext!.destination);
 
-    this.oscillator.start();
+    this.oscA.start();
+    this.oscB.start();
+    this.oscC.start();
+
     this.isPlaying = true;
   }
 
@@ -165,13 +226,35 @@ export class AudioEngine {
   }
 
   private stopAllSources() {
-    if (this.oscillator) {
-      try { this.oscillator.stop(); } catch {}
-      this.oscillator.disconnect();
-      this.oscillator = null;
+    if (this.oscA) {
+      try { this.oscA.stop(); } catch { /* ignore */ }
+      this.oscA.disconnect();
+      this.oscA = null;
+    }
+    if (this.oscB) {
+      try { this.oscB.stop(); } catch { /* ignore */ }
+      this.oscB.disconnect();
+      this.oscB = null;
+    }
+    if (this.oscC) {
+      try { this.oscC.stop(); } catch { /* ignore */ }
+      this.oscC.disconnect();
+      this.oscC = null;
+    }
+    if (this.gainA) {
+      this.gainA.disconnect();
+      this.gainA = null;
+    }
+    if (this.gainB) {
+      this.gainB.disconnect();
+      this.gainB = null;
+    }
+    if (this.gainC) {
+      this.gainC.disconnect();
+      this.gainC = null;
     }
     if (this.fileSource) {
-      try { this.fileSource.stop(); } catch {}
+      try { this.fileSource.stop(); } catch { /* ignore */ }
       this.fileSource.disconnect();
       this.fileSource = null;
     }
@@ -208,7 +291,9 @@ export class AudioEngine {
     }
 
     // Grab data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.analyzer.getByteFrequencyData(this.freqDataArray as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.analyzer.getByteTimeDomainData(this.timeDataArray as any);
 
     // 1. Calculate RMS Amplitude
