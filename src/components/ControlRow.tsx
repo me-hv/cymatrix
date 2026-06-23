@@ -57,7 +57,7 @@ export const ControlRow: React.FC<ControlRowProps> = ({
     <div className="flex flex-col gap-2 py-1 select-none">
       {/* Label and Manual Numeric Input */}
       <div className="flex justify-between items-center">
-        <span className="text-[11px] font-semibold text-zinc-400 tracking-wider uppercase flex items-center gap-1.5">
+        <span className="text-[11px] font-semibold text-zinc-400 tracking-widest uppercase flex items-center gap-1.5">
           {icon && <span className="text-zinc-500">{icon}</span>}
           {label}
         </span>

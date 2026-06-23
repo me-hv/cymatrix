@@ -25,46 +25,49 @@ body {
   appearance: none;
   width: 100%;
   height: 2px;
-  background: #27272a;
+  background: #262626;
   outline: none;
   cursor: pointer;
+  border-radius: 0;
 }
 
 .minimal-slider::-webkit-slider-runnable-track {
   width: 100%;
   height: 2px;
-  background: #27272a;
+  background: #262626;
+  border-radius: 0;
 }
 
 .minimal-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: #00ffff; /* Cyan 400 */
+  background: #22d3ee; /* Cyan-400 */
   cursor: pointer;
-  margin-top: -4px; /* Center thumb vertically on 2px track */
+  margin-top: -5px; /* Center thumb vertically on 2px track */
   border: none;
   box-shadow: none;
   transition: transform 0.1s ease;
 }
 
 .minimal-slider::-webkit-slider-thumb:active {
-  transform: scale(1.2);
+  transform: scale(1.15);
 }
 
 .minimal-slider::-moz-range-track {
   width: 100%;
   height: 2px;
-  background: #27272a;
+  background: #262626;
+  border-radius: 0;
 }
 
 .minimal-slider::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: #00ffff;
+  background: #22d3ee;
   cursor: pointer;
   border: none;
   box-shadow: none;
@@ -72,6 +75,31 @@ body {
 }
 
 .minimal-slider::-moz-range-thumb:active {
-  transform: scale(1.2);
+  transform: scale(1.15);
+}
+
+/* Custom scrollbar for minimalist sidebar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #08080a;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #22d3ee;
+}
+
+/* Firefox support */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #404040 #08080a;
 }
 

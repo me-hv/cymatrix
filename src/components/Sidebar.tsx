@@ -98,7 +98,7 @@ export const Sidebar: React.FC = () => {
   };
 
   // Build responsive styling dynamically (removed glows and neon borders)
-  let sidebarClasses = "bg-[#08080a] border-zinc-800/80 flex flex-col z-40 text-gray-200 select-none font-sans scrollbar-thin transition-all duration-300 ";
+  let sidebarClasses = "bg-[#08080a] border-zinc-800/80 flex flex-col z-40 text-gray-200 select-none font-sans custom-scrollbar transition-all duration-300 ";
 
   if (isMobile) {
     if (isPortrait) {
@@ -156,7 +156,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Settings / Parameters controls with increased whitespace spacing */}
-      <div className="p-6 flex-1 flex flex-col gap-7 overflow-y-auto">
+      <div className="p-6 flex-1 flex flex-col gap-7 overflow-y-auto custom-scrollbar">
         
         {/* Audio Sources */}
         <div className="flex flex-col gap-2">
