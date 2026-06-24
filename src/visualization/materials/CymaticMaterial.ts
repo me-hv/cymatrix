@@ -29,6 +29,20 @@ const CymaticMaterial = shaderMaterial(
     uBrightness: 1.0,
     uSpeed: 1.0,
     uMode: 1, // 0 = Mandala, 1 = Chladni, 2 = Ripple
+    u3DActive: 0.0,
+    uExaggeration: 0.3,
+    uSmoothing: 0.4,
+    uViewMode: 0, // 0 = Solid, 1 = Wireframe, 2 = Points
+    uColorMode: 0, // 0 = Neon, 1 = Metallic
+    uHeatMap: 0, // 0 = Off, 1 = On
+    uColorNode: new THREE.Vector3(),
+    uColorAccent: new THREE.Vector3(),
+    uColorPeak: new THREE.Vector3(),
+    uColorContrast: 1.0,
+    uInputMode: 0,
+    uBassEnergy: 0.0,
+    uMidEnergy: 0.0,
+    uTrebleEnergy: 0.0,
   },
   vertexShader,
   fragmentShader

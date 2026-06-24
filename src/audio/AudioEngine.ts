@@ -1,3 +1,5 @@
+import { useAppStore } from '../store/useAppStore';
+
 export class AudioEngine {
   private audioContext: AudioContext | null = null;
   private oscA: OscillatorNode | null = null;
@@ -14,6 +16,10 @@ export class AudioEngine {
   // File upload nodes
   private fileSource: AudioBufferSourceNode | null = null;
   private fileBuffer: AudioBuffer | null = null;
+
+  private fileStartTime: number = 0;
+  private fileOffset: number = 0;
+  public isPaused: boolean = false;
 
   public isPlaying: boolean = false;
   public inputMode: 'oscillator' | 'microphone' | 'file' = 'oscillator';
@@ -205,6 +211,7 @@ export class AudioEngine {
       // Do not connect to destination to prevent feedback, but let the analyzer parse it.
       
       this.isPlaying = true;
+      useAppStore.getState().setIsPlaying(true);
     } catch (err) {
       console.error('Error opening microphone:', err);
       this.stop();
@@ -221,11 +228,19 @@ export class AudioEngine {
       await this.audioContext!.resume();
     }
 
+    const store = useAppStore.getState();
+    store.setUploadedFileName(file.name);
+    store.setInputMode('file');
+
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const arrayBuffer = e.target?.result as ArrayBuffer;
         this.fileBuffer = await this.audioContext!.decodeAudioData(arrayBuffer);
+        
+        store.setTrackDuration(this.fileBuffer.duration);
+        this.fileOffset = 0;
+        this.isPaused = false;
         this.startFilePlayback();
       } catch (err) {
         console.error('Error decoding audio:', err);
@@ -248,8 +263,57 @@ export class AudioEngine {
     this.gainNode.connect(this.analyzer);
     this.analyzer.connect(this.audioContext.destination);
 
-    this.fileSource.start(0);
+    this.fileStartTime = this.audioContext.currentTime;
+    this.fileSource.start(0, this.fileOffset);
     this.isPlaying = true;
+    this.isPaused = false;
+    useAppStore.getState().setIsPlaying(true);
+  }
+
+  public pauseFilePlayback() {
+    if (this.inputMode === 'file' && this.fileSource && !this.isPaused && this.audioContext) {
+      this.fileSource.stop();
+      this.fileOffset += this.audioContext.currentTime - this.fileStartTime;
+      if (this.fileBuffer && this.fileOffset > this.fileBuffer.duration) {
+        this.fileOffset = 0;
+      }
+      this.isPaused = true;
+      this.isPlaying = false;
+      useAppStore.getState().setIsPlaying(false);
+    }
+  }
+
+  public resumeFilePlayback() {
+    if (this.inputMode === 'file' && this.isPaused && this.fileBuffer && this.audioContext) {
+      this.isPaused = false;
+      this.startFilePlayback();
+      useAppStore.getState().setIsPlaying(true);
+    }
+  }
+
+  public async setInputSource(mode: 'oscillator' | 'microphone' | 'file') {
+    if (this.inputMode === mode) return;
+    this.inputMode = mode;
+    this.stopAllSources();
+    
+    const store = useAppStore.getState();
+    store.setInputMode(mode);
+
+    if (mode === 'oscillator') {
+      this.playTestTone({
+        oscA: store.oscA,
+        oscB: store.oscB,
+        oscC: store.oscC
+      });
+    } else if (mode === 'microphone') {
+      await this.startMicrophone();
+    } else if (mode === 'file') {
+      this.isPlaying = false;
+      this.isPaused = false;
+      this.fileOffset = 0;
+      store.setIsPlaying(false);
+      store.setTrackProgress(0);
+    }
   }
 
   private stopAllSources() {
@@ -297,6 +361,8 @@ export class AudioEngine {
       this.gainNode.disconnect();
       this.gainNode = null;
     }
+    this.fileOffset = 0;
+    this.isPaused = false;
     this.isPlaying = false;
   }
 
@@ -306,13 +372,16 @@ export class AudioEngine {
 
   // Update loop called every frame (e.g. inside useFrame)
   public update() {
+    const store = useAppStore.getState();
+    const currentDamping = this.inputMode === 'oscillator' ? this.damping : store.audioSmoothing;
+    const currentSensitivity = this.inputMode === 'oscillator' ? 1.0 : store.sensitivity;
+
     if (!this.isPlaying || !this.analyzer || !this.freqDataArray.length) {
       // Settle/decay values based on damping
-      const decay = this.damping;
-      this.amplitude *= decay;
-      this.bassEnergy *= decay;
-      this.midEnergy *= decay;
-      this.trebleEnergy *= decay;
+      this.amplitude *= currentDamping;
+      this.bassEnergy *= currentDamping;
+      this.midEnergy *= currentDamping;
+      this.trebleEnergy *= currentDamping;
       if (this.amplitude < 0.001) this.amplitude = 0;
       return;
     }
@@ -329,9 +398,9 @@ export class AudioEngine {
       const v = (this.timeDataArray[i] - 128) / 128;
       sum += v * v;
     }
-    const rawRms = Math.sqrt(sum / this.timeDataArray.length);
+    const rawRms = Math.sqrt(sum / this.timeDataArray.length) * currentSensitivity;
     // Smooth using damping settings
-    this.amplitude = this.amplitude * this.damping + rawRms * (1.0 - this.damping);
+    this.amplitude = this.amplitude * currentDamping + rawRms * (1.0 - currentDamping);
 
     // 2. Extract frequency band energies (normalized 0.0 to 1.0)
     const nyquist = this.audioContext!.sampleRate / 2;
@@ -341,16 +410,21 @@ export class AudioEngine {
     let midSum = 0, midCount = 0;
     let trebleSum = 0, trebleCount = 0;
 
+    const freqFocus = store.freqFocus;
+
     for (let i = 0; i < this.freqDataArray.length; i++) {
       const hz = i * binSize;
-      const val = this.freqDataArray[i] / 255.0; // Normalise to 0-1
+      const val = (this.freqDataArray[i] / 255.0) * currentSensitivity; // Normalise to 0-1 and apply sensitivity
 
       if (hz < 250) {
         bassSum += val;
         bassCount++;
       } else if (hz < 2000) {
-        midSum += val;
-        midCount++;
+        // Concentrate mid energy around the freqFocus frequency using a bell/Gaussian weight
+        const diff = hz - freqFocus;
+        const weight = Math.exp(-(diff * diff) / (2 * 500 * 500)); // standard deviation of 500Hz
+        midSum += val * weight;
+        midCount += weight;
       } else {
         trebleSum += val;
         trebleCount++;
@@ -362,9 +436,9 @@ export class AudioEngine {
     const rawTreble = trebleCount > 0 ? trebleSum / trebleCount : 0;
 
     // Apply damping
-    this.bassEnergy = this.bassEnergy * this.damping + rawBass * (1.0 - this.damping);
-    this.midEnergy = this.midEnergy * this.damping + rawMid * (1.0 - this.damping);
-    this.trebleEnergy = this.trebleEnergy * this.damping + rawTreble * (1.0 - this.damping);
+    this.bassEnergy = this.bassEnergy * currentDamping + rawBass * (1.0 - currentDamping);
+    this.midEnergy = this.midEnergy * currentDamping + rawMid * (1.0 - currentDamping);
+    this.trebleEnergy = this.trebleEnergy * currentDamping + rawTreble * (1.0 - currentDamping);
 
     // 3. Find Dominant Frequency (if in microphone or file mode)
     if (this.inputMode !== 'oscillator') {
@@ -380,6 +454,17 @@ export class AudioEngine {
         const targetFreq = maxIndex * binSize;
         // Smooth frequency changes to prevent visual popping
         this.frequency = this.frequency * 0.95 + targetFreq * 0.05;
+      }
+    }
+
+    // 4. Update play progress if in file mode
+    if (this.inputMode === 'file' && this.fileBuffer && this.audioContext) {
+      const elapsed = (this.fileOffset + (this.audioContext.currentTime - this.fileStartTime)) % this.fileBuffer.duration;
+      const progress = (elapsed / this.fileBuffer.duration) * 100;
+      
+      const roundedProgress = Math.round(progress * 10) / 10; // 1 decimal place
+      if (Math.abs(store.trackProgress - roundedProgress) >= 0.2) {
+        store.setTrackProgress(roundedProgress);
       }
     }
   }

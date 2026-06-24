@@ -53,6 +53,13 @@ export interface OscillatorConfig {
   lfoRate: number;     // 0.1 to 10 Hz
 }
 
+export interface ResonanceBookmark {
+  id: string;
+  frequency: number;
+  target: 'A' | 'B' | 'C' | 'all';
+  timestamp: number;
+}
+
 interface AppState {
   visualizationMode: VisMode;
   frequency: number;
@@ -68,10 +75,43 @@ interface AppState {
   isRightSidebarOpen: boolean;
   isMobile: boolean;
 
+  // 3D Visualizer Settings
+  is3D: boolean;
+  exaggeration: number;
+  smoothing: number;
+  meshDetail: 'low' | 'med' | 'high';
+  viewMode: 'solid' | 'wireframe' | 'points';
+  colorMode: 'neon' | 'metallic';
+  heatMap: boolean;
+  cameraPreset: 'top' | 'isometric' | 'low' | null;
+  activePaletteId: 'neon' | 'gold' | 'sea' | 'thermal' | 'mono';
+  colorContrast: number;
+  chromaticAberration: boolean;
+  
+  // Audio Input Module Settings
+  inputMode: 'oscillator' | 'microphone' | 'file';
+  sensitivity: number;
+  audioSmoothing: number;
+  freqFocus: number;
+  uploadedFileName: string | null;
+  trackDuration: number;
+  trackProgress: number;
+
   // Polyphonic Oscillator State
   oscA: OscillatorConfig;
   oscB: OscillatorConfig;
   oscC: OscillatorConfig;
+
+  // Sweep State
+  sweepActive: boolean;
+  sweepTarget: 'A' | 'B' | 'C' | 'all';
+  sweepStart: number;
+  sweepEnd: number;
+  sweepSpeed: number; // Hz/second
+  sweepDirection: number; // 1 (up) or -1 (down)
+  sweepMode: 'loop' | 'bounce';
+  bookmarks: ResonanceBookmark[];
+  autoSaveOnPin: boolean;
   
   // Actions
   setVisualizationMode: (mode: VisMode) => void;
@@ -90,10 +130,43 @@ interface AppState {
   applyPreset: (presetName: keyof typeof PRESETS) => void;
   resetSettings: () => void;
 
+  setIs3D: (is3D: boolean) => void;
+  setExaggeration: (exaggeration: number) => void;
+  setSmoothing: (smoothing: number) => void;
+  setMeshDetail: (detail: 'low' | 'med' | 'high') => void;
+  setViewMode: (mode: 'solid' | 'wireframe' | 'points') => void;
+  setColorMode: (mode: 'neon' | 'metallic') => void;
+  setHeatMap: (heatMap: boolean) => void;
+  setCameraPreset: (preset: 'top' | 'isometric' | 'low' | null) => void;
+  setActivePaletteId: (id: 'neon' | 'gold' | 'sea' | 'thermal' | 'mono') => void;
+  setColorContrast: (contrast: number) => void;
+  setChromaticAberration: (active: boolean) => void;
+
+  setInputMode: (mode: 'oscillator' | 'microphone' | 'file') => void;
+  setSensitivity: (s: number) => void;
+  setAudioSmoothing: (s: number) => void;
+  setFreqFocus: (f: number) => void;
+  setUploadedFileName: (name: string | null) => void;
+  setTrackDuration: (d: number) => void;
+  setTrackProgress: (p: number) => void;
+
   setOscA: (config: Partial<OscillatorConfig>) => void;
   setOscB: (config: Partial<OscillatorConfig>) => void;
   setOscC: (config: Partial<OscillatorConfig>) => void;
+
+  setSweepActive: (active: boolean) => void;
+  setSweepTarget: (target: 'A' | 'B' | 'C' | 'all') => void;
+  setSweepStart: (start: number) => void;
+  setSweepEnd: (end: number) => void;
+  setSweepSpeed: (speed: number) => void;
+  setSweepMode: (mode: 'loop' | 'bounce') => void;
+  addBookmark: (bookmark: ResonanceBookmark) => void;
+  removeBookmark: (id: string) => void;
+  clearBookmarks: () => void;
+  setAutoSaveOnPin: (val: boolean) => void;
+  updateSweep: (delta: number) => void;
   setHarmonicInterval: (interval: 'fifth' | 'third' | 'octave') => void;
+  setSweepFrequencies: (freqs: { oscA: number; oscB: number; oscC: number; sweepDirection: number }) => void;
 }
 
 const DEFAULT_STATE = {
@@ -111,9 +184,41 @@ const DEFAULT_STATE = {
   isRightSidebarOpen: true,
   isMobile: false,
 
+  // 3D settings
+  is3D: false,
+  exaggeration: 0.3,
+  smoothing: 0.4,
+  meshDetail: 'low' as const,
+  viewMode: 'solid' as const,
+  colorMode: 'neon' as const,
+  heatMap: false,
+  cameraPreset: null as 'top' | 'isometric' | 'low' | null,
+  activePaletteId: 'neon' as const,
+  colorContrast: 1.0,
+  chromaticAberration: true,
+
+  // Audio Input Module Defaults
+  inputMode: 'oscillator' as const,
+  sensitivity: 1.0,
+  audioSmoothing: 0.8,
+  freqFocus: 1000,
+  uploadedFileName: null,
+  trackDuration: 0,
+  trackProgress: 0,
+
   oscA: { enabled: true, frequency: 440, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
   oscB: { enabled: false, frequency: 660, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
   oscC: { enabled: false, frequency: 880, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
+
+  sweepActive: false,
+  sweepTarget: 'A' as const,
+  sweepStart: 100,
+  sweepEnd: 2000,
+  sweepSpeed: 50,
+  sweepDirection: 1,
+  sweepMode: 'loop' as const,
+  bookmarks: [] as ResonanceBookmark[],
+  autoSaveOnPin: false,
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -136,6 +241,26 @@ export const useAppStore = create<AppState>((set) => ({
   setLeftSidebarOpen: (isLeftSidebarOpen) => set({ isLeftSidebarOpen }),
   setRightSidebarOpen: (isRightSidebarOpen) => set({ isRightSidebarOpen }),
   setIsMobile: (isMobile) => set({ isMobile }),
+
+  setIs3D: (is3D) => set({ is3D }),
+  setExaggeration: (exaggeration) => set({ exaggeration }),
+  setSmoothing: (smoothing) => set({ smoothing }),
+  setMeshDetail: (meshDetail) => set({ meshDetail }),
+  setViewMode: (viewMode) => set({ viewMode }),
+  setColorMode: (colorMode) => set({ colorMode }),
+  setHeatMap: (heatMap) => set({ heatMap }),
+  setCameraPreset: (cameraPreset) => set({ cameraPreset }),
+  setActivePaletteId: (activePaletteId) => set({ activePaletteId }),
+  setColorContrast: (colorContrast) => set({ colorContrast }),
+  setChromaticAberration: (chromaticAberration) => set({ chromaticAberration }),
+
+  setInputMode: (inputMode) => set({ inputMode }),
+  setSensitivity: (sensitivity) => set({ sensitivity }),
+  setAudioSmoothing: (audioSmoothing) => set({ audioSmoothing }),
+  setFreqFocus: (freqFocus) => set({ freqFocus }),
+  setUploadedFileName: (uploadedFileName) => set({ uploadedFileName }),
+  setTrackDuration: (trackDuration) => set({ trackDuration }),
+  setTrackProgress: (trackProgress) => set({ trackProgress }),
   
   applyPreset: (presetName) => {
     const preset = PRESETS[presetName];
@@ -179,4 +304,90 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }
   }),
+
+  setSweepActive: (sweepActive) => set({ sweepActive }),
+  setSweepTarget: (sweepTarget) => set({ sweepTarget }),
+  setSweepStart: (sweepStart) => set({ sweepStart }),
+  setSweepEnd: (sweepEnd) => set({ sweepEnd }),
+  setSweepSpeed: (sweepSpeed) => set({ sweepSpeed }),
+  setSweepMode: (sweepMode) => set({ sweepMode }),
+  addBookmark: (bookmark) => set((state) => ({
+    bookmarks: [...state.bookmarks.filter(b => b.frequency !== bookmark.frequency), bookmark]
+  })),
+  removeBookmark: (id) => set((state) => ({
+    bookmarks: state.bookmarks.filter((b) => b.id !== id)
+  })),
+  clearBookmarks: () => set({ bookmarks: [] }),
+  setAutoSaveOnPin: (autoSaveOnPin) => set({ autoSaveOnPin }),
+  
+  updateSweep: (delta) => set((state) => {
+    if (!state.sweepActive) return {};
+    
+    let leadOscKey: 'oscA' | 'oscB' | 'oscC' = 'oscA';
+    if (state.sweepTarget === 'B') leadOscKey = 'oscB';
+    else if (state.sweepTarget === 'C') leadOscKey = 'oscC';
+    
+    const leadOsc = state[leadOscKey];
+    const f = leadOsc.frequency;
+    
+    let nextF = f + state.sweepDirection * state.sweepSpeed * delta;
+    let newDirection = state.sweepDirection;
+    
+    if (nextF >= state.sweepEnd) {
+      if (state.sweepMode === 'bounce') {
+        nextF = state.sweepEnd;
+        newDirection = -1;
+      } else {
+        nextF = state.sweepStart;
+      }
+    } else if (nextF <= state.sweepStart) {
+      if (state.sweepMode === 'bounce') {
+        nextF = state.sweepStart;
+        newDirection = 1;
+      } else {
+        nextF = state.sweepEnd;
+      }
+    }
+    
+    const actualIncrement = nextF - f;
+    
+    if (state.sweepTarget === 'all') {
+      const updates: Partial<AppState> = {
+        sweepDirection: newDirection,
+      };
+      if (state.oscA.enabled) {
+        const nextA = Math.max(20, Math.min(2000, state.oscA.frequency + actualIncrement));
+        updates.oscA = { ...state.oscA, frequency: nextA };
+        updates.frequency = nextA;
+      }
+      if (state.oscB.enabled) {
+        updates.oscB = { ...state.oscB, frequency: Math.max(20, Math.min(2000, state.oscB.frequency + actualIncrement)) };
+      }
+      if (state.oscC.enabled) {
+        updates.oscC = { ...state.oscC, frequency: Math.max(20, Math.min(2000, state.oscC.frequency + actualIncrement)) };
+      }
+      return updates;
+    } else {
+      const updates: Partial<AppState> = {
+        sweepDirection: newDirection,
+      };
+      const clampedF = Math.max(20, Math.min(2000, nextF));
+      if (state.sweepTarget === 'A') {
+        updates.oscA = { ...state.oscA, frequency: clampedF };
+        updates.frequency = clampedF;
+      } else if (state.sweepTarget === 'B') {
+        updates.oscB = { ...state.oscB, frequency: clampedF };
+      } else if (state.sweepTarget === 'C') {
+        updates.oscC = { ...state.oscC, frequency: clampedF };
+      }
+      return updates;
+    }
+  }),
+  setSweepFrequencies: (freqs) => set((state) => ({
+    sweepDirection: freqs.sweepDirection,
+    oscA: { ...state.oscA, frequency: freqs.oscA },
+    oscB: { ...state.oscB, frequency: freqs.oscB },
+    oscC: { ...state.oscC, frequency: freqs.oscC },
+    frequency: freqs.oscA,
+  })),
 }));

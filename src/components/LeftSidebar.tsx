@@ -2,10 +2,10 @@ import React, { useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { audioEngine } from '../audio/AudioEngine';
 import { useOrientation } from '../hooks/useOrientation';
+import { exportSnapshot } from '../utils/export';
 import { 
   Play, 
   Square, 
-  Mic, 
   Upload, 
   Disc,
   Menu
@@ -22,13 +22,41 @@ export const LeftSidebar: React.FC = () => {
     oscA,
     oscB,
     oscC,
+    sweepActive,
+    sweepTarget,
+    sweepStart,
+    sweepEnd,
+    sweepSpeed,
+    sweepMode,
+    bookmarks,
+    autoSaveOnPin,
     
+    inputMode,
+    sensitivity,
+    audioSmoothing,
+    freqFocus,
+    uploadedFileName,
+    trackDuration,
+    trackProgress,
+
     setIsPlaying,
     setLeftSidebarOpen,
     setOscA,
     setOscB,
     setOscC,
     setHarmonicInterval,
+    setSweepActive,
+    setSweepTarget,
+    setSweepStart,
+    setSweepEnd,
+    setSweepSpeed,
+    setSweepMode,
+    addBookmark,
+    removeBookmark,
+    setAutoSaveOnPin,
+    setSensitivity,
+    setAudioSmoothing,
+    setFreqFocus,
   } = useAppStore();
 
   const handleToggleOscillator = async () => {
@@ -42,23 +70,24 @@ export const LeftSidebar: React.FC = () => {
     }
   };
 
-  const handleMicToggle = async () => {
+  const handleSourceChange = async (mode: 'oscillator' | 'microphone' | 'file') => {
     await audioEngine.resumeContext();
-    if (isPlaying && audioEngine.inputMode === 'microphone') {
-      audioEngine.stop();
-      setIsPlaying(false);
-    } else {
+    
+    if (mode === 'microphone') {
       const confirmAllow = window.confirm(
         "Cymatrix wants to access your Microphone to visualize live sound frequencies.\n\nTap OK to allow access."
       );
       if (!confirmAllow) return;
 
       try {
-        await audioEngine.startMicrophone();
+        await audioEngine.setInputSource('microphone');
         setIsPlaying(true);
       } catch {
         alert('Could not access microphone. Please check permissions in your browser settings.');
       }
+    } else {
+      await audioEngine.setInputSource(mode);
+      setIsPlaying(audioEngine.isPlaying);
     }
   };
 
@@ -71,21 +100,80 @@ export const LeftSidebar: React.FC = () => {
     }
   };
 
-  // Build responsive styling dynamically (flat design, matching scrollbars)
-  let sidebarClasses = "bg-[#121212] border-[#2a2a2a]/80 flex flex-col z-40 text-gray-200 select-none font-sans custom-scrollbar transition-all duration-300 ";
+  const handleFilePlayPauseToggle = () => {
+    if (audioEngine.isPaused) {
+      audioEngine.resumeFilePlayback();
+      setIsPlaying(true);
+    } else {
+      audioEngine.pauseFilePlayback();
+      setIsPlaying(false);
+    }
+  };
 
-  if (isMobile) {
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds) || seconds === 0) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const getCurrentSweepProgress = () => {
+    if (sweepTarget === 'B') return oscB.frequency;
+    if (sweepTarget === 'C') return oscC.frequency;
+    return oscA.frequency;
+  };
+
+  const handlePinResonance = async () => {
+    let freq = oscA.frequency;
+    const target = sweepTarget;
+    if (target === 'B') freq = oscB.frequency;
+    else if (target === 'C') freq = oscC.frequency;
+    
+    addBookmark({
+      id: Math.random().toString(36).substring(2, 11),
+      frequency: freq,
+      target: target,
+      timestamp: Date.now()
+    });
+
+    if (autoSaveOnPin) {
+      const filename = `cymatrix-resonance-${Math.round(freq)}hz`;
+      const freqText = target === 'all'
+        ? `A: ${oscA.frequency}Hz | B: ${oscB.frequency}Hz | C: ${oscC.frequency}Hz`
+        : `OSC ${target.toUpperCase()}: ${freq.toFixed(1)} Hz`;
+      try {
+        await exportSnapshot(freqText, `${filename}.png`);
+      } catch (err) {
+        console.error("Auto-save failed", err);
+      }
+    }
+  };
+
+  const [isOverlay, setIsOverlay] = React.useState(window.innerWidth < 1024);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      setIsOverlay(window.innerWidth < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Build responsive styling dynamically (flat design, matching scrollbars)
+  let sidebarClasses = "border-[#2a2a2a]/80 flex flex-col z-50 text-gray-200 select-none font-sans custom-scrollbar transition-all duration-300 ";
+
+  if (isOverlay) {
     if (isPortrait) {
-      sidebarClasses += `fixed bottom-0 left-0 w-full h-[55vh] rounded-t-2xl border-t border-[#2a2a2a] ${
+      sidebarClasses += `fixed bottom-0 left-0 w-full h-[55dvh] rounded-t-2xl border-t border-[#2a2a2a] backdrop-blur-md bg-[#121212]/75 ${
         isLeftSidebarOpen ? "translate-y-0" : "translate-y-full pointer-events-none"
       }`;
     } else {
-      sidebarClasses += `fixed top-0 left-0 w-72 h-full border-r border-[#2a2a2a] ${
+      sidebarClasses += `fixed top-0 left-0 w-72 h-[100dvh] border-r border-[#2a2a2a] backdrop-blur-md bg-[#121212]/75 ${
         isLeftSidebarOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
       }`;
     }
   } else {
-    sidebarClasses += `relative h-full border-r border-[#2a2a2a] ${
+    sidebarClasses += `relative h-full border-r border-[#2a2a2a] bg-[#121212] ${
       isLeftSidebarOpen ? "w-[300px] opacity-100" : "w-0 opacity-0 border-r-0 overflow-hidden pointer-events-none"
     }`;
   }
@@ -129,95 +217,425 @@ export const LeftSidebar: React.FC = () => {
       {/* Audio Content Panel */}
       <div className="p-6 flex-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
         
-        {/* Audio Sources */}
+        {/* Audio Input Switcher */}
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Audio Sources</span>
-          <div className="grid grid-cols-2 gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Input Source</span>
+          <div className="flex rounded bg-[#18181a] border border-[#2a2a2a] overflow-hidden text-[10px] font-mono font-bold">
             <button
-              onClick={handleToggleOscillator}
-              className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded border text-xs font-semibold transition-all active:scale-98 cursor-pointer ${
-                isPlaying && audioEngine.inputMode === 'oscillator'
-                  ? 'bg-cyan-500 text-black border-cyan-400 font-bold'
-                  : 'bg-transparent border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:text-white'
+              onClick={() => handleSourceChange('oscillator')}
+              className={`flex-1 py-2 text-center transition-all cursor-pointer ${
+                inputMode === 'oscillator' ? 'bg-cyan-950/20 text-[#22d3ee] font-bold' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              {isPlaying && audioEngine.inputMode === 'oscillator' ? (
-                <>
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                  <span>Stop Tone</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Sine Wave</span>
-                </>
-              )}
+              INTERNAL
             </button>
-
             <button
-              onClick={handleMicToggle}
-              className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded border text-xs font-semibold transition-all active:scale-98 cursor-pointer ${
-                isPlaying && audioEngine.inputMode === 'microphone'
-                  ? 'bg-cyan-500 text-black border-cyan-400 font-bold'
-                  : 'bg-transparent border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:text-white'
+              onClick={() => handleSourceChange('microphone')}
+              className={`flex-1 py-2 text-center transition-all cursor-pointer ${
+                inputMode === 'microphone' ? 'bg-cyan-950/20 text-[#22d3ee] font-bold' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              <Mic className="w-3.5 h-3.5" />
-              <span>{isPlaying && audioEngine.inputMode === 'microphone' ? 'Mute Mic' : 'Microphone'}</span>
+              MICROPHONE
             </button>
-          </div>
-
-          <div 
-            onClick={() => fileInputRef.current?.click()}
-            className="border border-dashed border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50 rounded p-3 transition-colors flex flex-col items-center justify-center gap-1 cursor-pointer"
-          >
-            <Upload className="w-4 h-4 text-zinc-500" />
-            <span className="text-[10px] text-zinc-400">Upload audio file (MP3/WAV)</span>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              accept="audio/*" 
-              className="hidden" 
-            />
+            <button
+              onClick={() => handleSourceChange('file')}
+              className={`flex-1 py-2 text-center transition-all cursor-pointer ${
+                inputMode === 'file' ? 'bg-cyan-950/20 text-[#22d3ee] font-bold' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              FILE
+            </button>
           </div>
         </div>
 
         <hr className="border-[#2a2a2a]" />
 
-        {/* Polyphonic Mixer Panel */}
-        <div className="flex flex-col gap-3">
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Oscillator Mixer</span>
-          <div className="flex flex-col divide-y divide-[#2a2a2a]">
-            <OscillatorRow name="OSC A" config={oscA} setConfig={setOscA} />
-            <OscillatorRow name="OSC B" config={oscB} setConfig={setOscB} />
-            <OscillatorRow name="OSC C" config={oscC} setConfig={setOscC} />
-          </div>
-        </div>
+        {inputMode === 'oscillator' ? (
+          <>
+            {/* Master Oscillator Tone Controller */}
+            <div className="flex justify-between items-center bg-zinc-950/25 border border-zinc-900 rounded p-3">
+              <span className="text-[10px] font-mono font-bold text-zinc-400">MASTER AUDIO TONE</span>
+              <button
+                onClick={handleToggleOscillator}
+                className={`px-3 py-1 rounded text-[10px] font-mono font-bold tracking-wider border transition-all cursor-pointer ${
+                  isPlaying && audioEngine.inputMode === 'oscillator'
+                    ? 'bg-cyan-950/20 border-cyan-500 text-[#22d3ee]'
+                    : 'bg-transparent border-[#2a2a2a] text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {isPlaying && audioEngine.inputMode === 'oscillator' ? 'ACTIVE' : 'MUTED'}
+              </button>
+            </div>
 
-        {/* Harmonic Interval Shortcuts */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Harmonic Intervals</span>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setHarmonicInterval('fifth')}
-              className="flex-1 py-1.5 bg-transparent hover:bg-zinc-900 active:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-semibold text-zinc-300 transition-colors active:scale-95 cursor-pointer"
-            >
-              Perfect 5th
-            </button>
-            <button
-              onClick={() => setHarmonicInterval('third')}
-              className="flex-1 py-1.5 bg-transparent hover:bg-zinc-900 active:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-semibold text-zinc-300 transition-colors active:scale-95 cursor-pointer"
-            >
-              Major 3rd
-            </button>
-            <button
-              onClick={() => setHarmonicInterval('octave')}
-              className="flex-1 py-1.5 bg-transparent hover:bg-zinc-900 active:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-semibold text-zinc-300 transition-colors active:scale-95 cursor-pointer"
-            >
-              Octave
-            </button>
+            {/* Polyphonic Mixer Panel */}
+            <div className="flex flex-col gap-3">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Oscillator Mixer</span>
+              <div className="flex flex-col divide-y divide-[#2a2a2a]">
+                <OscillatorRow name="OSC A" config={oscA} setConfig={setOscA} />
+                <OscillatorRow name="OSC B" config={oscB} setConfig={setOscB} />
+                <OscillatorRow name="OSC C" config={oscC} setConfig={setOscC} />
+              </div>
+            </div>
+
+            {/* Harmonic Interval Shortcuts */}
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Harmonic Intervals</span>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => setHarmonicInterval('fifth')}
+                  className="flex-1 py-1.5 bg-transparent hover:bg-zinc-900 active:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-semibold text-zinc-300 transition-colors active:scale-95 cursor-pointer"
+                >
+                  Perfect 5th
+                </button>
+                <button
+                  onClick={() => setHarmonicInterval('third')}
+                  className="flex-1 py-1.5 bg-transparent hover:bg-zinc-900 active:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-semibold text-zinc-300 transition-colors active:scale-95 cursor-pointer"
+                >
+                  Major 3rd
+                </button>
+                <button
+                  onClick={() => setHarmonicInterval('octave')}
+                  className="flex-1 py-1.5 bg-transparent hover:bg-zinc-900 active:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-semibold text-zinc-300 transition-colors active:scale-95 cursor-pointer"
+                >
+                  Octave
+                </button>
+              </div>
+            </div>
+
+            <hr className="border-[#2a2a2a]" />
+
+            {/* Sweep Controller Panel */}
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Sweep Controller</span>
+                <div className="flex rounded bg-[#18181a] border border-[#2a2a2a] overflow-hidden text-[8px] font-mono font-bold">
+                  <button
+                    onClick={() => setSweepMode('loop')}
+                    className={`px-2 py-0.5 border-r border-[#2a2a2a] ${
+                      sweepMode === 'loop' ? 'bg-cyan-950/20 text-[#22d3ee]' : 'text-zinc-500'
+                    }`}
+                  >
+                    LOOP
+                  </button>
+                  <button
+                    onClick={() => setSweepMode('bounce')}
+                    className={`px-2 py-0.5 ${
+                      sweepMode === 'bounce' ? 'bg-cyan-950/20 text-[#22d3ee]' : 'text-zinc-500'
+                    }`}
+                  >
+                    BOUNCE
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                {/* Row 1: Power Toggle & Target Selector */}
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => setSweepActive(!sweepActive)}
+                    className={`px-3 py-1 rounded text-[10px] font-mono font-bold tracking-wider border transition-all cursor-pointer ${
+                      sweepActive 
+                        ? 'bg-cyan-950/20 border-cyan-500 text-[#22d3ee]' 
+                        : 'bg-transparent border-[#2a2a2a] text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {sweepActive ? 'RUNNING' : 'SWEEP'}
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">TARGET</span>
+                    <div className="flex rounded bg-[#18181a] border border-[#2a2a2a] overflow-hidden text-[8px] font-mono font-bold">
+                      {(['A', 'B', 'C', 'all'] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setSweepTarget(t)}
+                          className={`px-2 py-1 border-r last:border-r-0 border-[#2a2a2a] ${
+                            sweepTarget === t ? 'bg-cyan-950/20 text-[#22d3ee]' : 'text-zinc-500'
+                          }`}
+                        >
+                          {t.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 2: Range Inputs (Start & End) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">START</span>
+                    <div className="flex items-baseline gap-1 border-b border-[#2a2a2a] focus-within:border-cyan-500/50 pb-0.5">
+                      <input
+                        type="number"
+                        min={20}
+                        max={2000}
+                        value={sweepStart}
+                        onChange={(e) => setSweepStart(Math.max(20, Math.min(2000, parseInt(e.target.value) || 20)))}
+                        className="w-full bg-transparent text-xs font-mono text-[#22d3ee] outline-none"
+                      />
+                      <span className="text-[8px] text-zinc-600 font-mono">Hz</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">END</span>
+                    <div className="flex items-baseline gap-1 border-b border-[#2a2a2a] focus-within:border-cyan-500/50 pb-0.5">
+                      <input
+                        type="number"
+                        min={20}
+                        max={2000}
+                        value={sweepEnd}
+                        onChange={(e) => setSweepEnd(Math.max(20, Math.min(2000, parseInt(e.target.value) || 2000)))}
+                        className="w-full bg-transparent text-xs font-mono text-[#22d3ee] outline-none"
+                      />
+                      <span className="text-[8px] text-zinc-600 font-mono">Hz</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 3: Speed Slider */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">SPEED</span>
+                    <span className="text-[9px] font-mono text-[#22d3ee]">{sweepSpeed} Hz/s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={500}
+                    step={1}
+                    value={sweepSpeed}
+                    onChange={(e) => setSweepSpeed(parseInt(e.target.value))}
+                    className="minimal-slider touch-none mt-1"
+                  />
+                </div>
+
+                {/* Progress Bar */}
+                <div className="flex flex-col gap-1 mt-1">
+                  <div className="w-full h-1 bg-[#18181a] border border-[#2a2a2a] rounded-sm overflow-hidden">
+                    <div 
+                      className="h-full bg-[#22d3ee] transition-all duration-75"
+                      style={{ width: `${Math.min(100, Math.max(0, ((getCurrentSweepProgress() - sweepStart) / (sweepEnd - sweepStart)) * 100))}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Live Panel Controls */}
+            <div className="flex flex-col gap-4">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Live Panel</span>
+              
+              {/* Sensitivity (Gain) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">SENSITIVITY (GAIN)</span>
+                  <span className="text-[9px] font-mono text-[#22d3ee]">{sensitivity.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={5.0}
+                  step={0.1}
+                  value={sensitivity}
+                  onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+                  className="minimal-slider touch-none mt-1"
+                />
+              </div>
+
+              {/* Smoothing (Inertia) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">SMOOTHING (INERTIA)</span>
+                  <span className="text-[9px] font-mono text-[#22d3ee]">{audioSmoothing.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={0.98}
+                  step={0.01}
+                  value={audioSmoothing}
+                  onChange={(e) => setAudioSmoothing(parseFloat(e.target.value))}
+                  className="minimal-slider touch-none mt-1"
+                />
+              </div>
+
+              {/* Frequency Range Focus */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-wider">FREQ RANGE FOCUS</span>
+                  <span className="text-[9px] font-mono text-[#22d3ee]">{freqFocus} Hz</span>
+                </div>
+                <input
+                  type="range"
+                  min={100}
+                  max={4000}
+                  step={50}
+                  value={freqFocus}
+                  onChange={(e) => setFreqFocus(parseInt(e.target.value))}
+                  className="minimal-slider touch-none mt-1"
+                />
+              </div>
+            </div>
+
+            {/* File Upload & Control Panel */}
+            {inputMode === 'file' && (
+              <>
+                <hr className="border-[#2a2a2a]" />
+                <div className="flex flex-col gap-3">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Audio File Player</span>
+                  
+                  {/* File Upload Dropzone */}
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border border-dashed border-zinc-800 hover:border-cyan-500/50 hover:bg-cyan-950/5 rounded p-4 transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer group"
+                  >
+                    <Upload className="w-5 h-5 text-zinc-500 group-hover:text-[#22d3ee] transition-colors" />
+                    <span className="text-[10px] text-zinc-400 group-hover:text-zinc-200 text-center">
+                      {uploadedFileName ? 'Change Audio File' : 'Click to Upload MP3/WAV'}
+                    </span>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleFileUpload} 
+                      accept="audio/*" 
+                      className="hidden" 
+                    />
+                  </div>
+
+                  {uploadedFileName && (
+                    <div className="flex flex-col gap-2 p-3 bg-zinc-950/40 border border-zinc-900 rounded">
+                      {/* Filename feedback */}
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <Disc className="w-3.5 h-3.5 text-[#22d3ee] shrink-0 animate-spin-slow" />
+                        <span className="text-[10px] font-mono text-zinc-300 truncate" title={uploadedFileName}>
+                          {uploadedFileName}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar & Timers */}
+                      <div className="flex flex-col gap-1 mt-1">
+                        <div className="w-full h-1 bg-zinc-900 rounded-sm overflow-hidden relative border border-zinc-800">
+                          <div 
+                            className="h-full bg-[#22d3ee] transition-all duration-75"
+                            style={{ width: `${trackProgress}%` }}
+                          ></div>
+                        </div>
+                        <div className="flex justify-between text-[8px] font-mono text-zinc-500">
+                          <span>{formatTime(trackDuration * (trackProgress / 100))}</span>
+                          <span>{formatTime(trackDuration)}</span>
+                        </div>
+                      </div>
+
+                      {/* Play/Pause Button */}
+                      <button
+                        onClick={handleFilePlayPauseToggle}
+                        className="w-full mt-1 py-1.5 rounded bg-cyan-950/20 border border-cyan-500/40 hover:border-cyan-400 text-xs font-mono font-bold text-[#22d3ee] tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        {isPlaying ? (
+                          <>
+                            <Square className="w-3.5 h-3.5 fill-current" />
+                            <span>PAUSE TRACK</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <span>PLAY TRACK</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        <hr className="border-[#2a2a2a]" />
+
+        {/* Resonance Bookmarks Panel */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Resonance Bookmarks</span>
+            
+            {/* Auto-Save Toggle */}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoSaveOnPin}
+                onChange={(e) => setAutoSaveOnPin(e.target.checked)}
+                className="w-2.5 h-2.5 rounded bg-zinc-900 border-zinc-800 text-cyan-500 focus:ring-0 cursor-pointer accent-cyan-400"
+              />
+              <span className="text-[7px] text-zinc-500 font-mono font-bold tracking-wider">AUTO-SNAP</span>
+            </label>
           </div>
+
+          {/* Pin Button */}
+          <button
+            onClick={handlePinResonance}
+            className="w-full py-2 bg-transparent hover:bg-cyan-950/10 border border-[#2a2a2a] hover:border-cyan-500/50 rounded flex items-center justify-center gap-2 text-xs font-mono font-bold text-cyan-400 tracking-wider transition-all active:scale-98 cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current" stroke="currentColor" strokeWidth="2">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>PIN RESONANCE</span>
+          </button>
+
+          {/* Bookmarked Gallery List */}
+          {bookmarks.length > 0 ? (
+            <div className="flex flex-col border border-[#2a2a2a] rounded bg-[#121212] max-h-36 overflow-y-auto custom-scrollbar divide-y divide-[#2a2a2a]">
+              {bookmarks.map((bookmark) => (
+                <div 
+                  key={bookmark.id}
+                  className="flex items-center justify-between p-2 hover:bg-[#18181a] transition-colors group cursor-pointer"
+                  onClick={() => {
+                    if (bookmark.target === 'all') {
+                      setOscA({ frequency: bookmark.frequency });
+                      setOscB({ frequency: Math.round(bookmark.frequency * 1.5) });
+                      setOscC({ frequency: Math.round(bookmark.frequency * 2.0) });
+                    } else if (bookmark.target === 'A') {
+                      setOscA({ frequency: bookmark.frequency });
+                    } else if (bookmark.target === 'B') {
+                      setOscB({ frequency: bookmark.frequency });
+                    } else if (bookmark.target === 'C') {
+                      setOscC({ frequency: bookmark.frequency });
+                    }
+                  }}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] font-mono text-[#22d3ee] font-bold">
+                      {bookmark.frequency.toFixed(1)} Hz
+                    </span>
+                    <span className="text-[6px] text-zinc-500 font-mono uppercase tracking-wider">
+                      OSC {bookmark.target.toUpperCase()}
+                    </span>
+                  </div>
+                  
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeBookmark(bookmark.id);
+                    }}
+                    className="p-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    title="Remove Bookmark"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-4 border border-[#2a2a2a] border-dashed rounded flex flex-col items-center justify-center gap-1">
+              <span className="text-[8px] text-zinc-600 font-mono tracking-wider">NO PINNED RESONANCES</span>
+            </div>
+          )}
         </div>
 
       </div>

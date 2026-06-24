@@ -24,7 +24,27 @@ uniform float uBrightness;
 uniform float uSpeed;
 uniform int uMode; // 0 = Mandala, 1 = Chladni, 2 = Ripple
 
+// 3D Parameters
+uniform float u3DActive;
+uniform float uExaggeration;
+uniform float uSmoothing;
+uniform int uViewMode; // 0 = Solid, 1 = Wireframe, 2 = Points
+uniform int uColorMode; // 0 = Neon, 1 = Metallic
+uniform int uHeatMap; // 0 = Off, 1 = On
+uniform vec3 uColorNode;
+uniform vec3 uColorAccent;
+uniform vec3 uColorPeak;
+uniform float uColorContrast;
+
+uniform int uInputMode;
+uniform float uBassEnergy;
+uniform float uMidEnergy;
+uniform float uTrebleEnergy;
+
 varying vec2 vUv;
+varying vec3 vNormal;
+varying vec3 vPosition;
+varying float vIntensity;
 
 #define PI 3.14159265359
 
@@ -33,79 +53,109 @@ float hash(float n) { return fract(sin(n) * 43758.5453123); }
 
 // Wave generator helpers mapping type to waveform shape:
 // 0 = Sine, 1 = Square, 2 = Sawtooth, 3 = Triangle
-float getWave(float theta, int type) {
+float getWave(float theta, int type, float smoothing) {
+  float raw = sin(theta);
   if (type == 1) { // Square
-    return sign(sin(theta));
+    raw = sign(sin(theta));
   } else if (type == 2) { // Sawtooth
-    return 2.0 * (theta / (2.0 * PI) - floor(0.5 + theta / (2.0 * PI)));
+    raw = 2.0 * (theta / (2.0 * PI) - floor(0.5 + theta / (2.0 * PI)));
   } else if (type == 3) { // Triangle
-    return 4.0 * abs(theta / (2.0 * PI) - floor(0.5 + theta / (2.0 * PI))) - 1.0;
+    raw = 4.0 * abs(theta / (2.0 * PI) - floor(0.5 + theta / (2.0 * PI))) - 1.0;
   }
-  return sin(theta); // Sine (0)
+  return mix(raw, sin(theta), smoothing);
 }
 
-float getWaveCos(float theta, int type) {
+float getWaveCos(float theta, int type, float smoothing) {
+  float raw = cos(theta);
   if (type == 1) { // Square
-    return sign(cos(theta));
+    raw = sign(cos(theta));
   } else if (type == 2) { // Sawtooth
     float thetaShifted = theta + PI * 0.5;
-    return 2.0 * (thetaShifted / (2.0 * PI) - floor(0.5 + thetaShifted / (2.0 * PI)));
+    raw = 2.0 * (thetaShifted / (2.0 * PI) - floor(0.5 + thetaShifted / (2.0 * PI)));
   } else if (type == 3) { // Triangle
     float thetaShifted = theta + PI * 0.5;
-    return 4.0 * abs(thetaShifted / (2.0 * PI) - floor(0.5 + thetaShifted / (2.0 * PI))) - 1.0;
+    raw = 4.0 * abs(thetaShifted / (2.0 * PI) - floor(0.5 + thetaShifted / (2.0 * PI))) - 1.0;
   }
-  return cos(theta); // Sine (0)
+  return mix(raw, cos(theta), smoothing);
 }
 
 // Helper function for Chladni component displacement
-float getChladni(vec2 symSt, float r, float t, float freq, float amp, float phase, int type) {
+float getChladni(vec2 symSt, float r, float t, float freq, float amp, float phase, int type, float smoothing) {
   if (freq <= 0.0 || amp <= 0.0) return 0.0;
   float baseFreq = clamp(freq, 20.0, 2000.0);
   float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
   float m = n * 1.618;
   float phaseRad = phase * PI / 180.0;
-  float wave = getWave(r * 12.0 - t * 2.5 + phaseRad, type) * (0.04 + amp * 0.08);
+  float wave = getWave(r * 12.0 - t * 2.5 + phaseRad, type, smoothing) * (0.04 + amp * 0.08);
   float x = symSt.x + wave;
   float y = symSt.y + wave;
-  return getWaveCos(n * x * PI + phaseRad, type) * getWaveCos(m * y * PI + phaseRad, type)
-       - getWaveCos(m * x * PI + phaseRad, type) * getWaveCos(n * y * PI + phaseRad, type);
+  return getWaveCos(n * x * PI + phaseRad, type, smoothing) * getWaveCos(m * y * PI + phaseRad, type, smoothing)
+       - getWaveCos(m * x * PI + phaseRad, type, smoothing) * getWaveCos(n * y * PI + phaseRad, type, smoothing);
 }
 
 // Helper function for Mandala component displacement
-float getMandala(vec2 symSt, float r, float t, float freq, float amp, float symAngle, float symmetry, float phase, int type) {
+float getMandala(vec2 symSt, float r, float t, float freq, float amp, float symAngle, float symmetry, float phase, int type, float smoothing) {
   if (freq <= 0.0 || amp <= 0.0) return 0.0;
   float baseFreq = clamp(freq, 20.0, 2000.0);
   float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
   float phaseRad = phase * PI / 180.0;
-  float wave = getWaveCos(r * 8.0 - t * 1.5 + phaseRad, type) * (0.03 + amp * 0.05);
+  float wave = getWaveCos(r * 8.0 - t * 1.5 + phaseRad, type, smoothing) * (0.03 + amp * 0.05);
   float rDistorted = r + wave;
   
-  float rings = getWave(rDistorted * n * PI - t + phaseRad, type);
-  float spokes = getWaveCos(symAngle * symmetry + phaseRad, type);
+  float rings = getWave(rDistorted * n * PI - t + phaseRad, type, smoothing);
+  float spokes = getWaveCos(symAngle * symmetry + phaseRad, type, smoothing);
   float val = rings * spokes;
-  val += 0.4 * getWave(rDistorted * n * 2.0 * PI + phaseRad, type) * getWaveCos(symAngle * symmetry * 2.0 - t + phaseRad, type);
+  val += 0.4 * getWave(rDistorted * n * 2.0 * PI + phaseRad, type, smoothing) * getWaveCos(symAngle * symmetry * 2.0 - t + phaseRad, type, smoothing);
   return val;
 }
 
 // Helper function for Ripple component displacement
-float getRipple(float r, float t, float freq, float amp, float symAngle, float symmetry, float phase, int type) {
+float getRipple(float r, float t, float freq, float amp, float symAngle, float symmetry, float phase, int type, float smoothing) {
   if (freq <= 0.0 || amp <= 0.0) return 0.0;
   float baseFreq = clamp(freq, 20.0, 2000.0);
   float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
   float phaseRad = phase * PI / 180.0;
-  float angularDistortion = getWave(symAngle * symmetry - t + phaseRad, type) * (0.1 + amp * 0.2);
-  return getWave((r + angularDistortion) * n * PI - t * 4.0 + phaseRad, type);
+  float angularDistortion = getWave(symAngle * symmetry - t + phaseRad, type, smoothing) * (0.1 + amp * 0.2);
+  return getWave((r + angularDistortion) * n * PI - t * 4.0 + phaseRad, type, smoothing);
 }
 
 void main() {
   // Center coordinates to range -1.0 to 1.0
   vec2 st = vUv * 2.0 - 1.0;
   
-  // Adjust aspect ratio so circles remain circular
-  st.x *= uResolution.x / uResolution.y;
+  // Mix aspect ratio correction based on 3D mode activation
+  float aspect = uResolution.x / uResolution.y;
+  float currentAspect = mix(aspect, 1.0, u3DActive);
+  st.x *= currentAspect;
 
   float r = length(st);
   float a = atan(st.y, st.x);
+
+  if (uViewMode == 1) {
+    vec3 electricCyan = vec3(0.0, 0.9, 1.0);
+    vec3 deepBlue = vec3(0.05, 0.2, 0.95);
+    vec3 deepPurple = vec3(0.45, 0.05, 0.9);
+    
+    vec3 wireColor = mix(electricCyan, deepBlue, smoothstep(0.2, 0.8, r));
+    wireColor = mix(wireColor, deepPurple, vIntensity * 0.5 + 0.5);
+    wireColor *= uBrightness;
+    wireColor *= smoothstep(1.0, 0.15, r);
+    
+    gl_FragColor = vec4(wireColor, 0.9);
+    return;
+  }
+
+  if (uViewMode == 2) {
+    vec3 electricCyan = vec3(0.0, 0.9, 1.0);
+    vec3 deepPurple = vec3(0.45, 0.05, 0.9);
+    
+    vec3 starColor = mix(electricCyan, deepPurple, vIntensity * 0.5 + 0.5);
+    starColor *= uBrightness;
+    // Fade out at edges to merge into pitch black background
+    starColor *= smoothstep(1.0, 0.1, r);
+    gl_FragColor = vec4(starColor, 1.0);
+    return;
+  }
 
   // Apply radial symmetry (Mandala reflection)
   float sector = 2.0 * PI / uSymmetry;
@@ -127,50 +177,49 @@ void main() {
 
   if (uMode == 1) {
     // Mode 1: Chladni-inspired Additive
-    float valA = getChladni(symSt, r, t, uFreqA, uAmpA, uPhaseA, uTypeA);
-    float valB = getChladni(symSt, r, t, uFreqB, uAmpB, uPhaseB, uTypeB);
-    float valC = getChladni(symSt, r, t, uFreqC, uAmpC, uPhaseC, uTypeC);
-    
-    float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
+    float valA = getChladni(symSt, r, t, uFreqA, uAmpA, uPhaseA, uTypeA, uSmoothing);
+    float valB = getChladni(symSt, r, t, uFreqB, uAmpB, uPhaseB, uTypeB, uSmoothing);
+    float valC = getChladni(symSt, r, t, uFreqC, uAmpC, uPhaseC, uTypeC, uSmoothing);
     
     if (activeOscCount > 0.0) {
-      float avgAmp = totalAmp / activeOscCount;
-      // Normalization: divide total displacement by number of active oscillators
-      // scaled by average amplitude to maintain consistent visual line thickness
-      val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
+      val = (valA + valB + valC) / activeOscCount;
     } else {
       // Fallback to legacy single mode using legacy uniforms
-      val = getChladni(symSt, r, t, uFrequency, uAmplitude, 0.0, 0);
+      val = getChladni(symSt, r, t, uFrequency, uAmplitude, 0.0, 0, uSmoothing);
     }
   } else if (uMode == 0) {
     // Mode 0: Mandala Additive
-    float valA = getMandala(symSt, r, t, uFreqA, uAmpA, symAngle, uSymmetry, uPhaseA, uTypeA);
-    float valB = getMandala(symSt, r, t, uFreqB, uAmpB, symAngle, uSymmetry, uPhaseB, uTypeB);
-    float valC = getMandala(symSt, r, t, uFreqC, uAmpC, symAngle, uSymmetry, uPhaseC, uTypeC);
-    
-    float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
+    float valA = getMandala(symSt, r, t, uFreqA, uAmpA, symAngle, uSymmetry, uPhaseA, uTypeA, uSmoothing);
+    float valB = getMandala(symSt, r, t, uFreqB, uAmpB, symAngle, uSymmetry, uPhaseB, uTypeB, uSmoothing);
+    float valC = getMandala(symSt, r, t, uFreqC, uAmpC, symAngle, uSymmetry, uPhaseC, uTypeC, uSmoothing);
     
     if (activeOscCount > 0.0) {
-      float avgAmp = totalAmp / activeOscCount;
-      val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
+      val = (valA + valB + valC) / activeOscCount;
     } else {
-      val = getMandala(symSt, r, t, uFrequency, uAmplitude, symAngle, uSymmetry, 0.0, 0);
+      val = getMandala(symSt, r, t, uFrequency, uAmplitude, symAngle, uSymmetry, 0.0, 0, uSmoothing);
     }
   } else {
     // Mode 2: Water Ripple Additive
-    float valA = getRipple(r, t, uFreqA, uAmpA, symAngle, uSymmetry, uPhaseA, uTypeA);
-    float valB = getRipple(r, t, uFreqB, uAmpB, symAngle, uSymmetry, uPhaseB, uTypeB);
-    float valC = getRipple(r, t, uFreqC, uAmpC, symAngle, uSymmetry, uPhaseC, uTypeC);
-    
-    float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
+    float valA = getRipple(r, t, uFreqA, uAmpA, symAngle, uSymmetry, uPhaseA, uTypeA, uSmoothing);
+    float valB = getRipple(r, t, uFreqB, uAmpB, symAngle, uSymmetry, uPhaseB, uTypeB, uSmoothing);
+    float valC = getRipple(r, t, uFreqC, uAmpC, symAngle, uSymmetry, uPhaseC, uTypeC, uSmoothing);
     
     if (activeOscCount > 0.0) {
-      float avgAmp = totalAmp / activeOscCount;
-      val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
+      val = (valA + valB + valC) / activeOscCount;
     } else {
-      val = getRipple(r, t, uFrequency, uAmplitude, symAngle, uSymmetry, 0.0, 0);
+      val = getRipple(r, t, uFrequency, uAmplitude, symAngle, uSymmetry, 0.0, 0, uSmoothing);
     }
   }
+
+  // 1. Apply circular mask to contain displacement and prevent corner tearing
+  float mask = clamp(1.0 - smoothstep(0.85, 1.0, r), 0.0, 1.0);
+  val *= mask;
+
+  // 2. Apply organic S-curve rounding to smooth the peaks and valleys
+  val = smoothstep(0.0, 1.0, val * 0.5 + 0.5) * 2.0 - 1.0;
+
+  // 3. Clamp final displacement to prevent extreme jagged spikes
+  val = clamp(val, -1.0, 1.0);
 
   // Calculate line thickness and glow based on maximum active amplitude
   float activeAmp = max(max(uAmpA, uAmpB), uAmpC);
@@ -188,22 +237,96 @@ void main() {
   // Additive glow bleed representation (tightened from 4.0 to 8.0 for edge highlighting)
   float glow = exp(-dist * (8.0 / glowWidth));
 
-  // Visual style: Dark background with gradient color mapping
-  vec3 whiteCyan = vec3(0.85, 1.0, 1.0);
-  vec3 electricCyan = vec3(0.0, 0.9, 1.0);
-  vec3 deepBlue = vec3(0.05, 0.2, 0.95);
-  vec3 deepPurple = vec3(0.45, 0.05, 0.9);
+  vec3 color = vec3(0.0);
 
-  // Gradient mapping based on radius r
-  vec3 baseColor = mix(electricCyan, deepBlue, smoothstep(0.1, 0.5, r));
-  baseColor = mix(baseColor, deepPurple, smoothstep(0.5, 0.9, r));
-  baseColor = mix(whiteCyan, baseColor, smoothstep(0.0, 0.2, r));
+  // Calculate baseColor from the active color palette color ramp based on height intensity
+  float hFactor = clamp(abs(vIntensity), 0.0, 1.0);
+  hFactor = pow(hFactor, uColorContrast);
+
+  vec3 baseColor = mix(
+    mix(uColorNode, uColorAccent, smoothstep(0.0, 0.5, hFactor)),
+    uColorPeak,
+    smoothstep(0.4, 1.0, hFactor)
+  );
 
   // Blend stroke, glow and apply global brightness control
-  vec3 color = (baseColor * stroke + baseColor * glow * 0.6) * uBrightness;
+  vec3 neonColor = (baseColor * stroke + baseColor * glow * 0.6) * uBrightness;
+
+  // Add a subtle dark slate color for the plate surface in 3D mode to make valleys/depth visible
+  vec3 plateBaseColor = uColorNode * (1.0 - stroke) * u3DActive;
+  vec3 surfaceColor = neonColor + plateBaseColor;
 
   // Fade out at edges to merge into pitch black background
-  color *= smoothstep(1.0, 0.1, r);
+  surfaceColor *= smoothstep(1.0, 0.1, r);
+
+  // Apply 3D lighting (diffuse and specular)
+  if (u3DActive > 0.01) {
+    vec3 viewDir = normalize(-vPosition);
+    
+    // Point light situated slightly above the plate
+    vec3 lightPos = vec3(0.0, 0.0, 1.2);
+    vec3 pointLightDir = normalize(lightPos - vPosition);
+    float pointDist = length(lightPos - vPosition);
+    float pointAtten = 1.0 / (1.0 + 0.3 * pointDist * pointDist);
+    
+    float pointDiffuse = max(0.0, dot(vNormal, pointLightDir)) * pointAtten;
+    vec3 pointHalfDir = normalize(pointLightDir + viewDir);
+    float pointSpecular = pow(max(0.0, dot(vNormal, pointHalfDir)), 64.0) * 0.9 * pointAtten;
+
+    if (uColorMode == 1) { // METALLIC (Liquid Chrome)
+      vec3 reflectDir = reflect(-viewDir, vNormal);
+      float skyWeight = reflectDir.y * 0.5 + 0.5;
+      vec3 skyColor = vec3(0.85, 0.9, 0.95);
+      vec3 groundColor = vec3(0.12, 0.12, 0.15);
+      vec3 chromeBase = mix(groundColor, skyColor, skyWeight);
+      
+      // Tint chromeBase using the intensity-based baseColor for custom metal reflection look
+      chromeBase = mix(chromeBase * baseColor * 2.0, baseColor, 0.55);
+      
+      vec3 specLightDir1 = normalize(vec3(0.5, 0.8, 0.5));
+      float envSpec1 = pow(max(0.0, dot(reflectDir, specLightDir1)), 16.0) * 0.5;
+      vec3 specLightDir2 = normalize(vec3(-0.8, 0.4, 0.2));
+      float envSpec2 = pow(max(0.0, dot(reflectDir, specLightDir2)), 32.0) * 0.3;
+      
+      // Add softbox specular reflections for the expensive "wet" studio chrome look
+      float softbox = 0.0;
+      softbox += smoothstep(0.06, 0.0, abs(reflectDir.x - 0.2)) * smoothstep(-0.4, 0.8, reflectDir.y) * 0.4;
+      softbox += smoothstep(0.05, 0.0, abs(reflectDir.y - 0.5)) * smoothstep(-0.6, 0.6, reflectDir.x) * 0.3;
+      float diag = abs(reflectDir.x + reflectDir.y - 0.2) * 0.707;
+      softbox += smoothstep(0.04, 0.0, diag) * 0.3;
+      
+      vec3 finalChrome = chromeBase * (0.4 + 0.6 * pointDiffuse) + 
+                         vec3(1.0) * (envSpec1 + envSpec2 + softbox) + 
+                         vec3(0.95, 0.98, 1.0) * pointSpecular;
+      
+      // Fade out at edges to merge into pitch black background
+      finalChrome *= smoothstep(1.0, 0.1, r);
+      color = finalChrome;
+    } else { // NEON
+      vec3 litColor = surfaceColor * (0.2 + 0.8 * pointDiffuse) + vec3(1.0) * pointSpecular * uBrightness * max(0.1, activeAmp);
+      color = mix(surfaceColor, litColor, u3DActive);
+    }
+  } else {
+    if (uColorMode == 1) { // 2D Metallic fallback (just shiny flat chrome plate)
+      vec3 viewDir = vec3(0.0, 0.0, 1.0);
+      vec3 reflectDir = reflect(-viewDir, vNormal);
+      float skyWeight = reflectDir.y * 0.5 + 0.5;
+      vec3 skyColor = vec3(0.85, 0.9, 0.95);
+      vec3 groundColor = vec3(0.12, 0.12, 0.15);
+      vec3 chromeBase = mix(groundColor, skyColor, skyWeight);
+      
+      // Tint chromeBase using the intensity-based baseColor for custom metal reflection look
+      chromeBase = mix(chromeBase * baseColor * 2.0, baseColor, 0.55);
+      
+      chromeBase *= smoothstep(1.0, 0.1, r);
+      color = chromeBase;
+    } else {
+      color = surfaceColor;
+    }
+  }
+
+  // Exposure Normalization: clamp to visible range to prevent solid white blobs
+  color = clamp(color, 0.0, 1.0);
 
   gl_FragColor = vec4(color, 1.0);
 }
