@@ -225,10 +225,12 @@ export const LeftSidebar: React.FC = () => {
   );
 };
 
+import { type OscillatorConfig } from '../store/useAppStore';
+
 interface OscillatorRowProps {
   name: string;
-  config: { enabled: boolean; frequency: number; gain: number };
-  setConfig: (config: Partial<{ enabled: boolean; frequency: number; gain: number }>) => void;
+  config: OscillatorConfig;
+  setConfig: (config: Partial<OscillatorConfig>) => void;
 }
 
 const OscillatorRow: React.FC<OscillatorRowProps> = ({ name, config, setConfig }) => {
@@ -257,44 +259,90 @@ const OscillatorRow: React.FC<OscillatorRowProps> = ({ name, config, setConfig }
     }
   };
 
-  return (
-    <div className="flex flex-col gap-2 p-3 bg-zinc-900/10 border border-zinc-900 rounded">
-      {/* Header: Toggle and Freq Input */}
-      <div className="flex justify-between items-center gap-3">
-        <div className="flex items-center gap-2.5">
-          <label className="relative inline-flex items-center cursor-pointer select-none">
-            <input 
-              type="checkbox" 
-              checked={config.enabled}
-              onChange={(e) => setConfig({ enabled: e.target.checked })}
-              className="sr-only peer"
-            />
-            <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 peer-checked:after:bg-cyan-400 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-950/40 border border-zinc-700 peer-checked:border-cyan-800/80"></div>
-          </label>
-          <span className={`text-[11px] font-bold tracking-widest ${config.enabled ? 'text-cyan-400' : 'text-zinc-500'}`}>
-            {name}
-          </span>
-        </div>
-        
-        {/* Frequency numeric input */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">Freq</span>
-          <input 
-            type="text"
-            value={tempFreqText}
-            onChange={(e) => setTempFreqText(e.target.value)}
-            onBlur={commitFreq}
-            onKeyDown={handleKeyDown}
-            className="w-14 bg-[#040406] border border-zinc-800 rounded px-1.5 py-0.5 text-right text-xs font-mono text-cyan-400 outline-none focus:border-cyan-500 transition-all"
-          />
-        </div>
-      </div>
+  const waveTypes: Array<{ id: OscillatorConfig['type']; label: string; svg: React.ReactNode }> = [
+    {
+      id: 'sine',
+      label: 'Sine',
+      svg: (
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M2 12 C 5 4, 7 20, 12 12 C 17 4, 19 20, 22 12" />
+        </svg>
+      )
+    },
+    {
+      id: 'square',
+      label: 'Square',
+      svg: (
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M2 12 H 7 V 6 H 12 V 18 H 17 V 12 H 22" />
+        </svg>
+      )
+    },
+    {
+      id: 'sawtooth',
+      label: 'Saw',
+      svg: (
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M2 18 L 14 6 V 18 L 22 10" />
+        </svg>
+      )
+    },
+    {
+      id: 'triangle',
+      label: 'Triangle',
+      svg: (
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M2 12 L 7 6 L 17 18 L 22 12" />
+        </svg>
+      )
+    }
+  ];
 
-      {/* Sliders */}
-      <div className="flex flex-col gap-1.5 mt-0.5">
-        {/* Pitch Slider */}
-        <div className="flex items-center gap-3">
-          <span className="w-7 text-[9px] font-mono text-zinc-500 uppercase tracking-wider">Pitch</span>
+  return (
+    <div className="flex gap-3 p-3 bg-zinc-950/20 border border-zinc-900 rounded select-none">
+      {/* Left side: 3 rows */}
+      <div className="flex-1 flex flex-col gap-2.5 min-w-0">
+        {/* Row 1: Label, Toggle, Waveform Icons */}
+        <div className="flex justify-between items-center gap-2">
+          <div className="flex items-center gap-2">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={config.enabled}
+                onChange={(e) => setConfig({ enabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-7 h-3.5 bg-zinc-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-3.5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 peer-checked:after:bg-cyan-400 after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-cyan-950/40 border border-zinc-700 peer-checked:border-cyan-800/80"></div>
+            </label>
+            <span className={`text-[10px] font-black tracking-wider ${config.enabled ? 'text-cyan-400' : 'text-zinc-500'}`}>
+              {name}
+            </span>
+          </div>
+
+          {/* Waveform Selector */}
+          <div className="flex gap-0.5">
+            {waveTypes.map((wave) => (
+              <button
+                key={wave.id}
+                disabled={!config.enabled}
+                onClick={() => setConfig({ type: wave.id })}
+                className={`w-5 h-5 rounded flex items-center justify-center border transition-all cursor-pointer ${
+                  !config.enabled 
+                    ? 'border-transparent text-zinc-700 opacity-30 cursor-not-allowed'
+                    : config.type === wave.id
+                      ? 'bg-cyan-950/30 border-cyan-500/80 text-cyan-400'
+                      : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-800'
+                }`}
+                title={wave.label}
+              >
+                {wave.svg}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2: Pitch slider & Numeric Input */}
+        <div className="flex items-center gap-2">
           <input
             type="range"
             min={20}
@@ -305,11 +353,93 @@ const OscillatorRow: React.FC<OscillatorRowProps> = ({ name, config, setConfig }
             onChange={(e) => setConfig({ frequency: parseInt(e.target.value) })}
             className={`minimal-slider flex-1 touch-none ${!config.enabled && 'opacity-25'}`}
           />
+          <div className="flex items-center gap-1 shrink-0">
+            <input 
+              type="text"
+              value={tempFreqText}
+              disabled={!config.enabled}
+              onChange={(e) => setTempFreqText(e.target.value)}
+              onBlur={commitFreq}
+              onKeyDown={handleKeyDown}
+              className={`w-12 bg-[#040406] border border-zinc-800 rounded px-1.5 py-0.5 text-right text-[10px] font-mono outline-none focus:border-cyan-500 transition-all ${
+                !config.enabled ? 'text-zinc-600 border-zinc-900 cursor-not-allowed' : 'text-cyan-400'
+              }`}
+            />
+            <span className="text-[8px] text-zinc-600 font-mono">Hz</span>
+          </div>
         </div>
 
-        {/* Volume Slider */}
-        <div className="flex items-center gap-3">
-          <span className="w-7 text-[9px] font-mono text-zinc-500 uppercase tracking-wider">Vol</span>
+        {/* Row 3: Grid of 3 Columns (Fine, Phase, LFO) */}
+        <div className="grid grid-cols-3 gap-2">
+          {/* Column 1: Fine tune */}
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[7px] text-zinc-500 uppercase font-mono font-bold tracking-wider">Fine</span>
+            <input
+              type="range"
+              min={-50}
+              max={50}
+              step={1}
+              value={config.detune}
+              disabled={!config.enabled}
+              onChange={(e) => setConfig({ detune: parseInt(e.target.value) })}
+              className={`minimal-slider touch-none ${!config.enabled && 'opacity-25'}`}
+            />
+            <span className={`text-[8px] font-mono text-center shrink-0 ${config.enabled ? 'text-cyan-400' : 'text-zinc-600'}`}>
+              {config.detune > 0 ? `+${config.detune}` : config.detune}c
+            </span>
+          </div>
+
+          {/* Column 2: Phase */}
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[7px] text-zinc-500 uppercase font-mono font-bold tracking-wider">Phase</span>
+            <input
+              type="range"
+              min={0}
+              max={360}
+              step={1}
+              value={config.phase}
+              disabled={!config.enabled}
+              onChange={(e) => setConfig({ phase: parseInt(e.target.value) })}
+              className={`minimal-slider touch-none ${!config.enabled && 'opacity-25'}`}
+            />
+            <span className={`text-[8px] font-mono text-center shrink-0 ${config.enabled ? 'text-cyan-400' : 'text-zinc-600'}`}>
+              {config.phase}°
+            </span>
+          </div>
+
+          {/* Column 3: LFO */}
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={config.lfoEnabled}
+                disabled={!config.enabled}
+                onChange={(e) => setConfig({ lfoEnabled: e.target.checked })}
+                className="w-2.5 h-2.5 rounded bg-zinc-900 border-zinc-800 text-cyan-500 focus:ring-0 cursor-pointer accent-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed"
+              />
+              <span className="text-[7px] text-zinc-500 uppercase font-mono font-bold tracking-wider">LFO</span>
+            </div>
+            <input
+              type="range"
+              min={0.1}
+              max={10.0}
+              step={0.1}
+              value={config.lfoRate}
+              disabled={!config.enabled || !config.lfoEnabled}
+              onChange={(e) => setConfig({ lfoRate: parseFloat(e.target.value) })}
+              className={`minimal-slider touch-none ${(!config.enabled || !config.lfoEnabled) && 'opacity-25'}`}
+            />
+            <span className={`text-[8px] font-mono text-center shrink-0 ${config.enabled && config.lfoEnabled ? 'text-cyan-400' : 'text-zinc-600'}`}>
+              {config.lfoRate.toFixed(1)}Hz
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Right side: Volume Strip */}
+      <div className="w-7 shrink-0 flex flex-col items-center justify-between border-l border-zinc-900 pl-2">
+        <span className="text-[7px] text-zinc-500 uppercase font-mono font-bold tracking-wider">Vol</span>
+        <div className="flex-1 flex items-center justify-center my-1.5 h-16">
           <input
             type="range"
             min={0}
@@ -318,12 +448,12 @@ const OscillatorRow: React.FC<OscillatorRowProps> = ({ name, config, setConfig }
             value={config.gain}
             disabled={!config.enabled}
             onChange={(e) => setConfig({ gain: parseFloat(e.target.value) })}
-            className={`minimal-slider flex-1 touch-none ${!config.enabled && 'opacity-25'}`}
+            className={`vertical-slider touch-none ${!config.enabled && 'opacity-25'}`}
           />
-          <span className="w-8 text-[9px] font-mono text-zinc-400 text-right">
-            {Math.round(config.gain * 100)}%
-          </span>
         </div>
+        <span className={`text-[8px] font-mono text-center shrink-0 ${config.enabled ? 'text-cyan-400' : 'text-zinc-600'}`}>
+          {Math.round(config.gain * 100)}%
+        </span>
       </div>
     </div>
   );

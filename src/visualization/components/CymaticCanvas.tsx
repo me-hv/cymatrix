@@ -37,9 +37,9 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
     
     // In oscillator mode, ensure the engine parameters match the mixer/UI values
     if (audioEngine.inputMode === 'oscillator') {
-      audioEngine.setOscillatorParams('A', settings.oscA.enabled, settings.oscA.frequency, settings.oscA.gain);
-      audioEngine.setOscillatorParams('B', settings.oscB.enabled, settings.oscB.frequency, settings.oscB.gain);
-      audioEngine.setOscillatorParams('C', settings.oscC.enabled, settings.oscC.frequency, settings.oscC.gain);
+      audioEngine.updateOscillator('A', settings.oscA.enabled, settings.oscA.frequency, settings.oscA.gain, settings.oscA.type, settings.oscA.detune, settings.oscA.lfoEnabled, settings.oscA.lfoRate, state.clock.elapsedTime);
+      audioEngine.updateOscillator('B', settings.oscB.enabled, settings.oscB.frequency, settings.oscB.gain, settings.oscB.type, settings.oscB.detune, settings.oscB.lfoEnabled, settings.oscB.lfoRate, state.clock.elapsedTime);
+      audioEngine.updateOscillator('C', settings.oscC.enabled, settings.oscC.frequency, settings.oscC.gain, settings.oscC.type, settings.oscC.detune, settings.oscC.lfoEnabled, settings.oscC.lfoRate, state.clock.elapsedTime);
     }
 
     // 4. Update shader uniforms directly on the GPU
@@ -54,14 +54,44 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
       materialRef.current.uSpeed = settings.speed;
 
       const globalAmp = audioEngine.amplitude;
-      if (audioEngine.inputMode === 'oscillator') {
-        materialRef.current.uFreqA = settings.oscA.enabled ? settings.oscA.frequency : 0.0;
-        materialRef.current.uFreqB = settings.oscB.enabled ? settings.oscB.frequency : 0.0;
-        materialRef.current.uFreqC = settings.oscC.enabled ? settings.oscC.frequency : 0.0;
+      const typeMap = { sine: 0, square: 1, sawtooth: 2, triangle: 3 };
 
-        materialRef.current.uAmpA = settings.oscA.enabled ? settings.oscA.gain * globalAmp : 0.0;
-        materialRef.current.uAmpB = settings.oscB.enabled ? settings.oscB.gain * globalAmp : 0.0;
-        materialRef.current.uAmpC = settings.oscC.enabled ? settings.oscC.gain * globalAmp : 0.0;
+      if (audioEngine.inputMode === 'oscillator') {
+        // Calculate detuned frequencies
+        const detunedFreqA = settings.oscA.frequency * Math.pow(2, settings.oscA.detune / 1200);
+        const detunedFreqB = settings.oscB.frequency * Math.pow(2, settings.oscB.detune / 1200);
+        const detunedFreqC = settings.oscC.frequency * Math.pow(2, settings.oscC.detune / 1200);
+
+        materialRef.current.uFreqA = settings.oscA.enabled ? detunedFreqA : 0.0;
+        materialRef.current.uFreqB = settings.oscB.enabled ? detunedFreqB : 0.0;
+        materialRef.current.uFreqC = settings.oscC.enabled ? detunedFreqC : 0.0;
+
+        // Calculate LFO modulated gains
+        let gainA = settings.oscA.gain;
+        if (settings.oscA.lfoEnabled) {
+          gainA *= 0.5 + 0.5 * Math.sin(2 * Math.PI * settings.oscA.lfoRate * state.clock.elapsedTime);
+        }
+        let gainB = settings.oscB.gain;
+        if (settings.oscB.lfoEnabled) {
+          gainB *= 0.5 + 0.5 * Math.sin(2 * Math.PI * settings.oscB.lfoRate * state.clock.elapsedTime);
+        }
+        let gainC = settings.oscC.gain;
+        if (settings.oscC.lfoEnabled) {
+          gainC *= 0.5 + 0.5 * Math.sin(2 * Math.PI * settings.oscC.lfoRate * state.clock.elapsedTime);
+        }
+
+        materialRef.current.uAmpA = settings.oscA.enabled ? gainA * globalAmp : 0.0;
+        materialRef.current.uAmpB = settings.oscB.enabled ? gainB * globalAmp : 0.0;
+        materialRef.current.uAmpC = settings.oscC.enabled ? gainC * globalAmp : 0.0;
+
+        // Set type and phase uniforms
+        materialRef.current.uTypeA = typeMap[settings.oscA.type] ?? 0;
+        materialRef.current.uTypeB = typeMap[settings.oscB.type] ?? 0;
+        materialRef.current.uTypeC = typeMap[settings.oscC.type] ?? 0;
+
+        materialRef.current.uPhaseA = settings.oscA.phase;
+        materialRef.current.uPhaseB = settings.oscB.phase;
+        materialRef.current.uPhaseC = settings.oscC.phase;
       } else {
         // Fallback for mic / file upload modes
         materialRef.current.uFreqA = audioEngine.frequency;
@@ -70,6 +100,14 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
         materialRef.current.uAmpB = 0.0;
         materialRef.current.uFreqC = 0.0;
         materialRef.current.uAmpC = 0.0;
+
+        materialRef.current.uTypeA = 0;
+        materialRef.current.uTypeB = 0;
+        materialRef.current.uTypeC = 0;
+
+        materialRef.current.uPhaseA = 0.0;
+        materialRef.current.uPhaseB = 0.0;
+        materialRef.current.uPhaseC = 0.0;
       }
 
       // Map string mode to integer: mandala=0, chladni=1, ripple=2

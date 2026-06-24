@@ -103,3 +103,64 @@ body {
   scrollbar-color: #404040 #08080a;
 }
 
+/* Minimalist Vertical Slider */
+.vertical-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 2px;
+  height: 64px; /* compact height for the strip */
+  background: #262626;
+  outline: none;
+  cursor: pointer;
+  border-radius: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  margin: 0 auto;
+}
+
+.vertical-slider::-webkit-slider-runnable-track {
+  width: 2px;
+  height: 64px;
+  background: #262626;
+  border-radius: 0;
+}
+
+.vertical-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22d3ee; /* Cyan-400 */
+  cursor: pointer;
+  margin-left: -4px; /* center thumb on 2px track */
+  border: none;
+  box-shadow: none;
+  transition: transform 0.1s ease;
+}
+
+.vertical-slider::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+}
+
+.vertical-slider::-moz-range-track {
+  width: 2px;
+  height: 64px;
+  background: #262626;
+  border-radius: 0;
+}
+
+.vertical-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22d3ee;
+  cursor: pointer;
+  border: none;
+  box-shadow: none;
+  transition: transform 0.1s ease;
+}
+
+.vertical-slider::-moz-range-thumb:active {
+  transform: scale(1.15);
+}

@@ -11,6 +11,12 @@ uniform float uFreqC;
 uniform float uAmpA;
 uniform float uAmpB;
 uniform float uAmpC;
+uniform float uPhaseA;
+uniform float uPhaseB;
+uniform float uPhaseC;
+uniform int uTypeA;
+uniform int uTypeB;
+uniform int uTypeC;
 
 // Pro Visual Parameters
 uniform float uThickness;
@@ -25,40 +31,70 @@ varying vec2 vUv;
 // Fast pseudo-random generator for detail
 float hash(float n) { return fract(sin(n) * 43758.5453123); }
 
+// Wave generator helpers mapping type to waveform shape:
+// 0 = Sine, 1 = Square, 2 = Sawtooth, 3 = Triangle
+float getWave(float theta, int type) {
+  if (type == 1) { // Square
+    return sign(sin(theta));
+  } else if (type == 2) { // Sawtooth
+    return 2.0 * (theta / (2.0 * PI) - floor(0.5 + theta / (2.0 * PI)));
+  } else if (type == 3) { // Triangle
+    return 4.0 * abs(theta / (2.0 * PI) - floor(0.5 + theta / (2.0 * PI))) - 1.0;
+  }
+  return sin(theta); // Sine (0)
+}
+
+float getWaveCos(float theta, int type) {
+  if (type == 1) { // Square
+    return sign(cos(theta));
+  } else if (type == 2) { // Sawtooth
+    float thetaShifted = theta + PI * 0.5;
+    return 2.0 * (thetaShifted / (2.0 * PI) - floor(0.5 + thetaShifted / (2.0 * PI)));
+  } else if (type == 3) { // Triangle
+    float thetaShifted = theta + PI * 0.5;
+    return 4.0 * abs(thetaShifted / (2.0 * PI) - floor(0.5 + thetaShifted / (2.0 * PI))) - 1.0;
+  }
+  return cos(theta); // Sine (0)
+}
+
 // Helper function for Chladni component displacement
-float getChladni(vec2 symSt, float r, float t, float freq, float amp) {
+float getChladni(vec2 symSt, float r, float t, float freq, float amp, float phase, int type) {
   if (freq <= 0.0 || amp <= 0.0) return 0.0;
   float baseFreq = clamp(freq, 20.0, 2000.0);
   float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
   float m = n * 1.618;
-  float wave = sin(r * 12.0 - t * 2.5) * (0.04 + amp * 0.08);
+  float phaseRad = phase * PI / 180.0;
+  float wave = getWave(r * 12.0 - t * 2.5 + phaseRad, type) * (0.04 + amp * 0.08);
   float x = symSt.x + wave;
   float y = symSt.y + wave;
-  return cos(n * x * PI) * cos(m * y * PI) - cos(m * x * PI) * cos(n * y * PI);
+  return getWaveCos(n * x * PI + phaseRad, type) * getWaveCos(m * y * PI + phaseRad, type)
+       - getWaveCos(m * x * PI + phaseRad, type) * getWaveCos(n * y * PI + phaseRad, type);
 }
 
 // Helper function for Mandala component displacement
-float getMandala(vec2 symSt, float r, float t, float freq, float amp, float symAngle, float symmetry) {
+float getMandala(vec2 symSt, float r, float t, float freq, float amp, float symAngle, float symmetry, float phase, int type) {
   if (freq <= 0.0 || amp <= 0.0) return 0.0;
   float baseFreq = clamp(freq, 20.0, 2000.0);
   float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
-  float wave = cos(r * 8.0 - t * 1.5) * (0.03 + amp * 0.05);
+  float phaseRad = phase * PI / 180.0;
+  float wave = getWaveCos(r * 8.0 - t * 1.5 + phaseRad, type) * (0.03 + amp * 0.05);
   float rDistorted = r + wave;
   
-  float rings = sin(rDistorted * n * PI - t);
-  float spokes = cos(symAngle * symmetry);
+  float rings = getWave(rDistorted * n * PI - t + phaseRad, type);
+  float spokes = getWaveCos(symAngle * symmetry + phaseRad, type);
   float val = rings * spokes;
-  val += 0.4 * sin(rDistorted * n * 2.0 * PI) * cos(symAngle * symmetry * 2.0 - t);
+  val += 0.4 * getWave(rDistorted * n * 2.0 * PI + phaseRad, type) * getWaveCos(symAngle * symmetry * 2.0 - t + phaseRad, type);
   return val;
 }
 
 // Helper function for Ripple component displacement
-float getRipple(float r, float t, float freq, float amp, float symAngle, float symmetry) {
+float getRipple(float r, float t, float freq, float amp, float symAngle, float symmetry, float phase, int type) {
   if (freq <= 0.0 || amp <= 0.0) return 0.0;
   float baseFreq = clamp(freq, 20.0, 2000.0);
   float n = 2.0 + log2(baseFreq / 20.0) * 1.5;
-  float angularDistortion = sin(symAngle * symmetry - t) * (0.1 + amp * 0.2);
-  return sin((r + angularDistortion) * n * PI - t * 4.0);
+  float phaseRad = phase * PI / 180.0;
+  float angularDistortion = getWave(symAngle * symmetry - t + phaseRad, type) * (0.1 + amp * 0.2);
+  return getWave((r + angularDistortion) * n * PI - t * 4.0 + phaseRad, type);
 }
 
 void main() {
@@ -91,9 +127,9 @@ void main() {
 
   if (uMode == 1) {
     // Mode 1: Chladni-inspired Additive
-    float valA = getChladni(symSt, r, t, uFreqA, uAmpA);
-    float valB = getChladni(symSt, r, t, uFreqB, uAmpB);
-    float valC = getChladni(symSt, r, t, uFreqC, uAmpC);
+    float valA = getChladni(symSt, r, t, uFreqA, uAmpA, uPhaseA, uTypeA);
+    float valB = getChladni(symSt, r, t, uFreqB, uAmpB, uPhaseB, uTypeB);
+    float valC = getChladni(symSt, r, t, uFreqC, uAmpC, uPhaseC, uTypeC);
     
     float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
     
@@ -104,13 +140,13 @@ void main() {
       val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
     } else {
       // Fallback to legacy single mode using legacy uniforms
-      val = getChladni(symSt, r, t, uFrequency, uAmplitude);
+      val = getChladni(symSt, r, t, uFrequency, uAmplitude, 0.0, 0);
     }
   } else if (uMode == 0) {
     // Mode 0: Mandala Additive
-    float valA = getMandala(symSt, r, t, uFreqA, uAmpA, symAngle, uSymmetry);
-    float valB = getMandala(symSt, r, t, uFreqB, uAmpB, symAngle, uSymmetry);
-    float valC = getMandala(symSt, r, t, uFreqC, uAmpC, symAngle, uSymmetry);
+    float valA = getMandala(symSt, r, t, uFreqA, uAmpA, symAngle, uSymmetry, uPhaseA, uTypeA);
+    float valB = getMandala(symSt, r, t, uFreqB, uAmpB, symAngle, uSymmetry, uPhaseB, uTypeB);
+    float valC = getMandala(symSt, r, t, uFreqC, uAmpC, symAngle, uSymmetry, uPhaseC, uTypeC);
     
     float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
     
@@ -118,13 +154,13 @@ void main() {
       float avgAmp = totalAmp / activeOscCount;
       val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
     } else {
-      val = getMandala(symSt, r, t, uFrequency, uAmplitude, symAngle, uSymmetry);
+      val = getMandala(symSt, r, t, uFrequency, uAmplitude, symAngle, uSymmetry, 0.0, 0);
     }
   } else {
     // Mode 2: Water Ripple Additive
-    float valA = getRipple(r, t, uFreqA, uAmpA, symAngle, uSymmetry);
-    float valB = getRipple(r, t, uFreqB, uAmpB, symAngle, uSymmetry);
-    float valC = getRipple(r, t, uFreqC, uAmpC, symAngle, uSymmetry);
+    float valA = getRipple(r, t, uFreqA, uAmpA, symAngle, uSymmetry, uPhaseA, uTypeA);
+    float valB = getRipple(r, t, uFreqB, uAmpB, symAngle, uSymmetry, uPhaseB, uTypeB);
+    float valC = getRipple(r, t, uFreqC, uAmpC, symAngle, uSymmetry, uPhaseC, uTypeC);
     
     float totalDisplacement = (valA * uAmpA) + (valB * uAmpB) + (valC * uAmpC);
     
@@ -132,7 +168,7 @@ void main() {
       float avgAmp = totalAmp / activeOscCount;
       val = (totalDisplacement / activeOscCount) / max(0.001, avgAmp);
     } else {
-      val = getRipple(r, t, uFrequency, uAmplitude, symAngle, uSymmetry);
+      val = getRipple(r, t, uFrequency, uAmplitude, symAngle, uSymmetry, 0.0, 0);
     }
   }
 

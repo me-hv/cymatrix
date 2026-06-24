@@ -76,11 +76,16 @@ export class AudioEngine {
     }
   }
 
-  public setOscillatorParams(
+  public updateOscillator(
     id: 'A' | 'B' | 'C',
     enabled: boolean,
     frequency: number,
-    gainVal: number
+    gainVal: number,
+    type: 'sine' | 'square' | 'sawtooth' | 'triangle',
+    detune: number,
+    lfoEnabled: boolean,
+    lfoRate: number,
+    elapsedTime: number
   ) {
     const osc = id === 'A' ? this.oscA : id === 'B' ? this.oscB : this.oscC;
     const gainNode = id === 'A' ? this.gainA : id === 'B' ? this.gainB : this.gainC;
@@ -89,23 +94,30 @@ export class AudioEngine {
       const time = this.audioContext.currentTime;
       if (osc) {
         osc.frequency.setTargetAtTime(frequency, time, 0.05);
+        if (osc.type !== type) {
+          osc.type = type;
+        }
+        osc.detune.setTargetAtTime(detune, time, 0.05);
       }
       if (gainNode) {
-        const targetGain = enabled ? gainVal : 0;
-        gainNode.gain.setTargetAtTime(targetGain, time, 0.05);
+        let activeGain = enabled ? gainVal : 0;
+        if (enabled && lfoEnabled) {
+          activeGain *= 0.5 + 0.5 * Math.sin(2 * Math.PI * lfoRate * elapsedTime);
+        }
+        gainNode.gain.setTargetAtTime(activeGain, time, 0.02);
       }
     }
   }
 
   public playTestTone(
     oscConfigs: {
-      oscA: { enabled: boolean; frequency: number; gain: number };
-      oscB: { enabled: boolean; frequency: number; gain: number };
-      oscC: { enabled: boolean; frequency: number; gain: number };
+      oscA: { enabled: boolean; frequency: number; gain: number; type: 'sine' | 'square' | 'sawtooth' | 'triangle'; detune: number; lfoEnabled: boolean; lfoRate: number };
+      oscB: { enabled: boolean; frequency: number; gain: number; type: 'sine' | 'square' | 'sawtooth' | 'triangle'; detune: number; lfoEnabled: boolean; lfoRate: number };
+      oscC: { enabled: boolean; frequency: number; gain: number; type: 'sine' | 'square' | 'sawtooth' | 'triangle'; detune: number; lfoEnabled: boolean; lfoRate: number };
     } = {
-      oscA: { enabled: true, frequency: 440, gain: 0.5 },
-      oscB: { enabled: false, frequency: 660, gain: 0.5 },
-      oscC: { enabled: false, frequency: 880, gain: 0.5 },
+      oscA: { enabled: true, frequency: 440, gain: 0.5, type: 'sine', detune: 0, lfoEnabled: false, lfoRate: 1.0 },
+      oscB: { enabled: false, frequency: 660, gain: 0.5, type: 'sine', detune: 0, lfoEnabled: false, lfoRate: 1.0 },
+      oscC: { enabled: false, frequency: 880, gain: 0.5, type: 'sine', detune: 0, lfoEnabled: false, lfoRate: 1.0 },
     }
   ) {
     this.init();
@@ -123,27 +135,42 @@ export class AudioEngine {
     // Set up OSC A
     this.oscA = this.audioContext!.createOscillator();
     this.gainA = this.audioContext!.createGain();
-    this.oscA.type = 'sine';
+    this.oscA.type = oscConfigs.oscA.type;
     this.oscA.frequency.setValueAtTime(oscConfigs.oscA.frequency, this.audioContext!.currentTime);
-    this.gainA.gain.setValueAtTime(oscConfigs.oscA.enabled ? oscConfigs.oscA.gain : 0, this.audioContext!.currentTime);
+    this.oscA.detune.setValueAtTime(oscConfigs.oscA.detune, this.audioContext!.currentTime);
+    let initGainA = oscConfigs.oscA.enabled ? oscConfigs.oscA.gain : 0;
+    if (oscConfigs.oscA.enabled && oscConfigs.oscA.lfoEnabled) {
+      initGainA *= 0.5 + 0.5 * Math.sin(2 * Math.PI * oscConfigs.oscA.lfoRate * 0);
+    }
+    this.gainA.gain.setValueAtTime(initGainA, this.audioContext!.currentTime);
     this.oscA.connect(this.gainA);
     this.gainA.connect(this.gainNode);
 
     // Set up OSC B
     this.oscB = this.audioContext!.createOscillator();
     this.gainB = this.audioContext!.createGain();
-    this.oscB.type = 'sine';
+    this.oscB.type = oscConfigs.oscB.type;
     this.oscB.frequency.setValueAtTime(oscConfigs.oscB.frequency, this.audioContext!.currentTime);
-    this.gainB.gain.setValueAtTime(oscConfigs.oscB.enabled ? oscConfigs.oscB.gain : 0, this.audioContext!.currentTime);
+    this.oscB.detune.setValueAtTime(oscConfigs.oscB.detune, this.audioContext!.currentTime);
+    let initGainB = oscConfigs.oscB.enabled ? oscConfigs.oscB.gain : 0;
+    if (oscConfigs.oscB.enabled && oscConfigs.oscB.lfoEnabled) {
+      initGainB *= 0.5 + 0.5 * Math.sin(2 * Math.PI * oscConfigs.oscB.lfoRate * 0);
+    }
+    this.gainB.gain.setValueAtTime(initGainB, this.audioContext!.currentTime);
     this.oscB.connect(this.gainB);
     this.gainB.connect(this.gainNode);
 
     // Set up OSC C
     this.oscC = this.audioContext!.createOscillator();
     this.gainC = this.audioContext!.createGain();
-    this.oscC.type = 'sine';
+    this.oscC.type = oscConfigs.oscC.type;
     this.oscC.frequency.setValueAtTime(oscConfigs.oscC.frequency, this.audioContext!.currentTime);
-    this.gainC.gain.setValueAtTime(oscConfigs.oscC.enabled ? oscConfigs.oscC.gain : 0, this.audioContext!.currentTime);
+    this.oscC.detune.setValueAtTime(oscConfigs.oscC.detune, this.audioContext!.currentTime);
+    let initGainC = oscConfigs.oscC.enabled ? oscConfigs.oscC.gain : 0;
+    if (oscConfigs.oscC.enabled && oscConfigs.oscC.lfoEnabled) {
+      initGainC *= 0.5 + 0.5 * Math.sin(2 * Math.PI * oscConfigs.oscC.lfoRate * 0);
+    }
+    this.gainC.gain.setValueAtTime(initGainC, this.audioContext!.currentTime);
     this.oscC.connect(this.gainC);
     this.gainC.connect(this.gainNode);
 

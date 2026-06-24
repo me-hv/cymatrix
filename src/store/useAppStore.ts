@@ -46,6 +46,11 @@ export interface OscillatorConfig {
   enabled: boolean;
   frequency: number;
   gain: number;
+  type: 'sine' | 'square' | 'sawtooth' | 'triangle';
+  detune: number;      // -50 to 50 cents
+  phase: number;       // 0 to 360 degrees
+  lfoEnabled: boolean;
+  lfoRate: number;     // 0.1 to 10 Hz
 }
 
 interface AppState {
@@ -106,9 +111,9 @@ const DEFAULT_STATE = {
   isRightSidebarOpen: true,
   isMobile: false,
 
-  oscA: { enabled: true, frequency: 440, gain: 0.5 },
-  oscB: { enabled: false, frequency: 660, gain: 0.5 },
-  oscC: { enabled: false, frequency: 880, gain: 0.5 },
+  oscA: { enabled: true, frequency: 440, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
+  oscB: { enabled: false, frequency: 660, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
+  oscC: { enabled: false, frequency: 880, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -142,9 +147,9 @@ export const useAppStore = create<AppState>((set) => ({
         speed: preset.speed,
         damping: preset.damping,
         brightness: preset.brightness,
-        oscA: { enabled: true, frequency: preset.frequency, gain: 0.5 },
-        oscB: { enabled: true, frequency: Math.round(preset.frequency * 1.5), gain: 0.35 },
-        oscC: { enabled: true, frequency: Math.round(preset.frequency * 2.0), gain: 0.25 },
+        oscA: { enabled: true, frequency: preset.frequency, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
+        oscB: { enabled: true, frequency: Math.round(preset.frequency * 1.5), gain: 0.35, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
+        oscC: { enabled: true, frequency: Math.round(preset.frequency * 2.0), gain: 0.25, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
       });
     }
   },
