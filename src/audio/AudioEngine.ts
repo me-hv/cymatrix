@@ -40,6 +40,18 @@ export class AudioEngine {
   private damping: number = 0.8; // Smoothing factor
   private fftSize: number = 2048;
 
+  public getAudioContext(): AudioContext | null {
+    return this.audioContext;
+  }
+
+  public getAnalyzerNode(): AnalyserNode | null {
+    return this.analyzer;
+  }
+
+  public getGainNode(): GainNode | null {
+    return this.gainNode;
+  }
+
   public async init() {
     if (this.audioContext) return;
     this.audioContext = new (window.AudioContext || (window as unknown as Record<string, typeof AudioContext>).webkitAudioContext)();

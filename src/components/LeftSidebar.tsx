@@ -8,7 +8,8 @@ import {
   Square, 
   Upload, 
   Disc,
-  Menu
+  Menu,
+  Eye
 } from 'lucide-react';
 
 export const LeftSidebar: React.FC = () => {
@@ -38,7 +39,7 @@ export const LeftSidebar: React.FC = () => {
     uploadedFileName,
     trackDuration,
     trackProgress,
-
+    setZenMode,
     setIsPlaying,
     setLeftSidebarOpen,
     setOscA,
@@ -204,14 +205,24 @@ export const LeftSidebar: React.FC = () => {
           </div>
         </div>
         
-        {/* Collapse Button */}
-        <button 
-          onClick={() => setLeftSidebarOpen(false)}
-          className="p-2 rounded-md border border-zinc-800 bg-[#0c0c0e] hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-all active:scale-95 cursor-pointer"
-          title="Collapse Panel"
-        >
-          <Menu className="w-4 h-4" />
-        </button>
+        {/* Actions (Zen Mode + Collapse) */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setZenMode(true)}
+            className="p-2 rounded-md border border-zinc-800 bg-[#0c0c0e] hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-all active:scale-95 cursor-pointer"
+            title="Zen Mode (Hide All UI)"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+
+          <button 
+            onClick={() => setLeftSidebarOpen(false)}
+            className="p-2 rounded-md border border-zinc-800 bg-[#0c0c0e] hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-all active:scale-95 cursor-pointer"
+            title="Collapse Panel"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Audio Content Panel */}

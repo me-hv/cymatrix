@@ -40,6 +40,12 @@ uniform float uBassEnergy;
 uniform float uMidEnergy;
 uniform float uTrebleEnergy;
 
+uniform int uPlateShape;
+uniform float uPlateDamping;
+
+uniform sampler2D uFluidTexture;
+uniform float uFluidActive;
+
 #define PI 3.14159265359
 
 // Fast pseudo-random generator
@@ -113,6 +119,20 @@ float getRipple(float r, float t, float freq, float amp, float symAngle, float s
   return getWave((r + angularDistortion) * n * PI - t * 4.0 + phaseRad, type, smoothing);
 }
 
+float getPlateDistance(vec2 p) {
+  if (uPlateShape == 1) { // SQUARE
+    return max(abs(p.x), abs(p.y));
+  } else if (uPlateShape == 2) { // HEXAGON
+    vec2 q = abs(p);
+    return max(q.y, q.x * 0.8660254 + q.y * 0.5);
+  } else if (uPlateShape == 3) { // TRIANGLE
+    float ty = p.y + 0.25;
+    return max(abs(p.x) * 1.7320508 + ty, -2.0 * ty);
+  } else { // CIRCLE (0)
+    return length(p);
+  }
+}
+
 // Global function to retrieve the raw cymatic displacement at a given UV
 float getCymaticValueRaw(vec2 uv) {
   // Center coordinates to range -1.0 to 1.0
@@ -122,6 +142,15 @@ float getCymaticValueRaw(vec2 uv) {
   float aspect = uResolution.x / uResolution.y;
   float currentAspect = mix(aspect, 1.0, u3DActive);
   st.x *= currentAspect;
+
+  float actualD = getPlateDistance(st);
+
+  // Boundary reflection (mirror fold at 0.82)
+  float reflectBoundary = 0.82;
+  if (actualD > reflectBoundary) {
+    float fold = 2.0 * reflectBoundary - actualD;
+    st = st * (fold / actualD);
+  }
 
   float r = length(st);
   float a = atan(st.y, st.x);
@@ -178,14 +207,17 @@ float getCymaticValueRaw(vec2 uv) {
     val = val * (0.5 + uBassEnergy * 2.0) + trebleDetail * (0.3 + uMidEnergy * 1.7);
   }
 
-  // 1. Apply circular mask to contain displacement and prevent corner tearing
-  float mask = clamp(1.0 - smoothstep(0.85, 1.0, r), 0.0, 1.0);
+  // Apply material damping spatial decay based on distance from center
+  val *= exp(-uPlateDamping * actualD);
+
+  // Apply plate shape mask (fade out before bezel starts at 0.9)
+  float mask = clamp(1.0 - smoothstep(0.85, 0.92, actualD), 0.0, 1.0);
   val *= mask;
 
-  // 2. Apply organic S-curve rounding to smooth the peaks and valleys
+  // Apply organic S-curve rounding to smooth the peaks and valleys
   val = smoothstep(0.0, 1.0, val * 0.5 + 0.5) * 2.0 - 1.0;
 
-  // 3. Clamp final displacement to prevent extreme jagged spikes
+  // Clamp final displacement to prevent extreme jagged spikes
   val = clamp(val, -1.0, 1.0);
 
   return val;
@@ -211,7 +243,37 @@ float getCymaticValueBlurred(vec2 uv) {
 }
 
 float getCymaticValue(vec2 uv) {
-  return getCymaticValueBlurred(uv);
+  float procedVal = getCymaticValueBlurred(uv);
+  
+  // Sample fluid texture: V chemical is in the green channel
+  float fluidVal = texture2D(uFluidTexture, uv).g;
+  
+  // Normalize fluid concentration [0.0, 1.0] to displacement [-1.0, 1.0]
+  float fluidDisplacement = fluidVal * 2.0 - 1.0;
+  
+  return mix(procedVal, fluidDisplacement, uFluidActive);
+}
+
+float getTotalHeight(vec2 uv) {
+  // Center coordinates
+  vec2 st = uv * 2.0 - 1.0;
+  float aspect = uResolution.x / uResolution.y;
+  float currentAspect = mix(aspect, 1.0, u3DActive);
+  st.x *= currentAspect;
+  
+  float d = getPlateDistance(st);
+  float intensity = getCymaticValue(uv);
+  
+  float bezelHeight = 0.0;
+  if (d > 0.9 && d <= 1.0) {
+    float t = (d - 0.9) / 0.1;
+    bezelHeight = sin(t * PI) * 0.12;
+  }
+  
+  // Outside shape has zero height
+  if (d > 1.0) return 0.0;
+  
+  return intensity + bezelHeight;
 }
 
 void main() {
@@ -220,18 +282,20 @@ void main() {
   float intensity = getCymaticValue(uv);
   vIntensity = intensity;
   
+  float totalH = getTotalHeight(uv);
+  
   vec3 displacedPosition = position;
   vec3 normalVec = normal;
   
   if (u3DActive > 0.01) {
-    // Apply displacement directly to Z coordinate of plane vertices
-    displacedPosition.z += intensity * uExaggeration;
+    // Apply total height (displacement + bezel) directly to Z coordinate of plane vertices
+    displacedPosition.z += totalH * uExaggeration;
     
-    // Calculate normal vector numerically
+    // Calculate normal vector numerically including the bezel slope
     float eps = 0.005;
-    float h = intensity; // Reuse already calculated intensity
-    float hX = getCymaticValue(uv + vec2(eps, 0.0));
-    float hY = getCymaticValue(uv + vec2(0.0, eps));
+    float h = totalH;
+    float hX = getTotalHeight(uv + vec2(eps, 0.0));
+    float hY = getTotalHeight(uv + vec2(0.0, eps));
     
     vec3 tangent = vec3(2.0 * eps, 0.0, (hX - h) * uExaggeration);
     vec3 bitangent = vec3(0.0, 2.0 * eps, (hY - h) * uExaggeration);

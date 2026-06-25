@@ -43,6 +43,10 @@ const CymaticMaterial = shaderMaterial(
     uBassEnergy: 0.0,
     uMidEnergy: 0.0,
     uTrebleEnergy: 0.0,
+    uPlateShape: 0, // 0 = Circle, 1 = Square, 2 = Hexagon, 3 = Triangle
+    uPlateDamping: 0.1,
+    uFluidTexture: null,
+    uFluidActive: 0.0,
   },
   vertexShader,
   fragmentShader

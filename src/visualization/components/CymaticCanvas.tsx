@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, useFBO } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { audioEngine } from '../../audio/AudioEngine';
@@ -9,6 +9,102 @@ import { CymaticMaterial } from '../materials/CymaticMaterial';
 import { isMobileDevice } from '../../utils/device';
 import { registerWebGLContext } from '../../utils/export';
 import { COLOR_PALETTES, hexToRgb } from '../palettes';
+
+const simFragmentShader = `
+varying vec2 vUv;
+uniform sampler2D uTexture;
+uniform float uDeltaTime;
+uniform float uTime;
+uniform float uFeed;
+uniform float uKill;
+uniform float uViscosity;
+uniform float uFluidity;
+uniform float uGrowthRate;
+uniform float uAudioEnergy;
+uniform vec3 uMouse;
+uniform vec2 uResolution;
+uniform float uReset;
+
+float rand(vec2 co) {
+  return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+  vec2 uv = vUv;
+  vec2 texel = vec2(1.0) / uResolution;
+
+  if (uReset > 0.5) {
+    float u = 1.0;
+    float v = 0.0;
+    
+    vec2 center = uv - 0.5;
+    if (length(center) < 0.06) {
+      v = 0.5 + 0.5 * rand(uv);
+      u = 0.5;
+    }
+    
+    if (rand(uv * 10.0) > 0.993) {
+      v = 0.8;
+      u = 0.2;
+    }
+    
+    gl_FragColor = vec4(u, v, 0.0, 1.0);
+    return;
+  }
+
+  vec4 val = texture2D(uTexture, uv);
+  float u = val.r;
+  float v = val.g;
+
+  vec4 n  = texture2D(uTexture, uv + vec2(0.0,  texel.y));
+  vec4 s  = texture2D(uTexture, uv + vec2(0.0, -texel.y));
+  vec4 e  = texture2D(uTexture, uv + vec2( texel.x, 0.0));
+  vec4 w  = texture2D(uTexture, uv + vec2(-texel.x, 0.0));
+  
+  vec4 nw = texture2D(uTexture, uv + vec2(-texel.x,  texel.y));
+  vec4 ne = texture2D(uTexture, uv + vec2( texel.x,  texel.y));
+  vec4 sw = texture2D(uTexture, uv + vec2(-texel.x, -texel.y));
+  vec4 se = texture2D(uTexture, uv + vec2( texel.x, -texel.y));
+
+  vec2 lap = vec2(0.0);
+  lap.r = 0.2 * (n.r + s.r + e.r + w.r) + 0.05 * (nw.r + ne.r + sw.r + se.r) - u;
+  lap.g = 0.2 * (n.g + s.g + e.g + w.g) + 0.05 * (nw.g + ne.g + sw.g + se.g) - v;
+
+  float Du = 0.16 * uViscosity;
+  float Dv = 0.08 * uViscosity;
+
+  float feed = uFeed * uGrowthRate;
+  float kill = uKill;
+
+  if (uFluidity > 0.01 && uAudioEnergy > 0.0) {
+    float noise = rand(uv + uTime * 0.1) - 0.5;
+    vec2 offset = vec2(noise, rand(uv + uTime * 0.2) - 0.5) * texel * uAudioEnergy * uFluidity * 3.0;
+    vec4 perturbed = texture2D(uTexture, uv + offset);
+    u = mix(u, perturbed.r, 0.1);
+    v = mix(v, perturbed.g, 0.1);
+  }
+
+  float reaction = u * v * v;
+  float dt = min(uDeltaTime * 15.0, 1.2);
+  
+  float nextU = u + (Du * lap.r - reaction + feed * (1.0 - u)) * dt;
+  float nextV = v + (Dv * lap.g + reaction - (feed + kill) * v) * dt;
+
+  nextU = clamp(nextU, 0.0, 1.0);
+  nextV = clamp(nextV, 0.0, 1.0);
+
+  if (uMouse.z > 0.5) {
+    float dist = distance(uv, uMouse.xy);
+    if (dist < 0.025) {
+      float strength = (1.0 - smoothstep(0.0, 0.025, dist)) * 0.85;
+      nextV = clamp(nextV + strength, 0.0, 1.0);
+      nextU = clamp(nextU - strength, 0.0, 1.0);
+    }
+  }
+
+  gl_FragColor = vec4(nextU, nextV, 0.0, 1.0);
+}
+`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) => {
@@ -39,6 +135,77 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
   const colorNodeVec = useMemo(() => hexToRgb(activePalette.node), [activePalette]);
   const colorAccentVec = useMemo(() => hexToRgb(activePalette.accent), [activePalette]);
   const colorPeakVec = useMemo(() => hexToRgb(activePalette.peak), [activePalette]);
+
+  // Setup FBO Ping-Pong buffers
+  const fboA = useFBO(512, 512, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.FloatType,
+  });
+  const fboB = useFBO(512, 512, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.FloatType,
+  });
+
+  // Create offscreen scene and camera for simulation
+  const simScene = useMemo(() => new THREE.Scene(), []);
+  const simCamera = useMemo(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), []);
+
+  const simMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: simFragmentShader,
+      uniforms: {
+        uTexture: { value: null },
+        uDeltaTime: { value: 0.016 },
+        uTime: { value: 0 },
+        uFeed: { value: 0.055 },
+        uKill: { value: 0.062 },
+        uViscosity: { value: 1.0 },
+        uFluidity: { value: 0.5 },
+        uGrowthRate: { value: 1.0 },
+        uAudioEnergy: { value: 0.0 },
+        uMouse: { value: new THREE.Vector3(0.5, 0.5, 0) },
+        uResolution: { value: new THREE.Vector2(512, 512) },
+        uReset: { value: 1.0 },
+      },
+      depthWrite: false,
+      depthTest: false,
+    });
+  }, []);
+
+  const simMaterialRef = useRef(simMaterial);
+
+  const simMesh = useMemo(() => {
+    const geom = new THREE.PlaneGeometry(2, 2);
+    const mesh = new THREE.Mesh(geom, simMaterial);
+    simScene.add(mesh);
+    return mesh;
+  }, [simScene, simMaterial]);
+
+  // Clean up FBO simulation resources
+  useEffect(() => {
+    return () => {
+      simScene.clear();
+      simMesh.geometry.dispose();
+      simMaterial.dispose();
+    };
+  }, [simScene, simMesh, simMaterial]);
+
+  const frameCountRef = useRef(0);
+  const uFluidActiveRef = useRef(0.0);
+  const lastModeRef = useRef('');
+  const resetTicksRef = useRef(0);
+  const mousePosRef = useRef(new THREE.Vector3(0.5, 0.5, 0.0));
 
   const u3DActiveRef = useRef(0);
 
@@ -95,6 +262,65 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
 
     // 2. Fetch latest UI settings from Zustand store without triggering re-renders
     const settings = useAppStore.getState();
+
+    // --- Reaction-Diffusion Offscreen Simulation Pass ---
+    let resetVal = 0.0;
+    if (settings.visualizationMode === 'fluid') {
+      if (lastModeRef.current !== 'fluid') {
+        resetTicksRef.current = 5; // Reset for 5 frames to clear FBO and seed
+        lastModeRef.current = 'fluid';
+      }
+      if (resetTicksRef.current > 0) {
+        resetVal = 1.0;
+        resetTicksRef.current--;
+      }
+    } else {
+      lastModeRef.current = settings.visualizationMode;
+    }
+
+    const readBuffer = frameCountRef.current % 2 === 0 ? fboA : fboB;
+    const writeBuffer = frameCountRef.current % 2 === 0 ? fboB : fboA;
+
+    // Decay mouse hover Z value
+    mousePosRef.current.z = THREE.MathUtils.lerp(mousePosRef.current.z, 0.0, 5 * delta);
+
+    // Update FBO sim uniforms
+    simMaterialRef.current.uniforms.uTexture.value = readBuffer.texture;
+    simMaterialRef.current.uniforms.uDeltaTime.value = Math.min(delta, 0.03);
+    simMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+    simMaterialRef.current.uniforms.uViscosity.value = settings.fluidViscosity;
+    simMaterialRef.current.uniforms.uFluidity.value = settings.fluidity;
+    simMaterialRef.current.uniforms.uGrowthRate.value = settings.fluidGrowthRate;
+    simMaterialRef.current.uniforms.uAudioEnergy.value = audioEngine.amplitude;
+    simMaterialRef.current.uniforms.uMouse.value.copy(mousePosRef.current);
+    simMaterialRef.current.uniforms.uReset.value = resetVal;
+
+    // Map frequencies/amplitude to feed/kill rates
+    const domFreq = settings.inputMode === 'oscillator' 
+      ? (settings.oscA.enabled ? settings.oscA.frequency : 440) 
+      : audioEngine.frequency;
+    const domAmp = settings.inputMode === 'oscillator'
+      ? (settings.oscA.enabled ? settings.oscA.gain : 0.5)
+      : audioEngine.amplitude;
+
+    // Feed F [0.012, 0.07]
+    const feed = 0.015 + (Math.log2(THREE.MathUtils.clamp(domFreq, 100, 2000) / 100.0) / Math.log2(20)) * 0.045;
+    simMaterialRef.current.uniforms.uFeed.value = THREE.MathUtils.clamp(feed, 0.012, 0.07);
+
+    // Kill K [0.045, 0.07]
+    const kill = 0.052 + domAmp * 0.014;
+    simMaterialRef.current.uniforms.uKill.value = THREE.MathUtils.clamp(kill, 0.045, 0.07);
+
+    // Render offscreen pass
+    state.gl.setRenderTarget(writeBuffer);
+    state.gl.render(simScene, simCamera);
+    state.gl.setRenderTarget(null);
+
+    // Smoothly lerp uFluidActive uniform
+    const targetFluidActive = settings.visualizationMode === 'fluid' ? 1.0 : 0.0;
+    uFluidActiveRef.current = THREE.MathUtils.lerp(uFluidActiveRef.current, targetFluidActive, 5 * delta);
+
+    frameCountRef.current++;
 
     // Local Sweeper Calculation to prevent high-frequency Zustand store updates
     if (settings.sweepActive && audioEngine.inputMode === 'oscillator') {
@@ -321,6 +547,15 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
       if (settings.visualizationMode === 'mandala') modeInt = 0;
       else if (settings.visualizationMode === 'ripple') modeInt = 2;
       materialRef.current.uMode = modeInt;
+
+      // Plate settings
+      const shapeMap = { circle: 0, square: 1, hexagon: 2, triangle: 3 };
+      materialRef.current.uPlateShape = shapeMap[settings.plateShape] ?? 0;
+      materialRef.current.uPlateDamping = settings.plateDamping;
+
+      // Fluid Simulation FBO uniform assignment
+      materialRef.current.uFluidTexture = writeBuffer.texture;
+      materialRef.current.uFluidActive = uFluidActiveRef.current;
     }
   });
 
@@ -339,9 +574,19 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
     />
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handlePointerMove = (e: any) => {
+    if (e.uv) {
+      mousePosRef.current.set(e.uv.x, e.uv.y, 1.0);
+    }
+  };
+
   if (viewMode === 'points') {
     return (
-      <points>
+      <points
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerMove}
+      >
         {geometryElement}
         {materialElement}
       </points>
@@ -349,7 +594,10 @@ const CymaticPlane = ({ composerRef }: { composerRef: React.RefObject<any> }) =>
   }
 
   return (
-    <mesh>
+    <mesh
+      onPointerMove={handlePointerMove}
+      onPointerDown={handlePointerMove}
+    >
       {geometryElement}
       {materialElement}
     </mesh>
@@ -367,32 +615,42 @@ const CameraController = ({ is3D }: { is3D: boolean }) => {
 
   const cameraPreset = useAppStore((state) => state.cameraPreset);
   const setCameraPreset = useAppStore((state) => state.setCameraPreset);
+  const cameraZoom = useAppStore((state) => state.cameraZoom);
+
+  const lastZoomRef = useRef(cameraZoom);
+  const zoomTransitionActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (cameraZoom !== lastZoomRef.current) {
+      zoomTransitionActiveRef.current = true;
+      lastZoomRef.current = cameraZoom;
+    }
+  }, [cameraZoom]);
 
   useEffect(() => {
     setTimeout(() => setIsTransitioning(true), 0);
+    const targetDistance = (is3D ? 2.2627 : 2.0) / cameraZoom;
     if (is3D) {
-      // Perspective camera position: looking down at the plate from a 3D angle (Isometric)
-      targetPos.current.set(0, -1.6, 1.6);
+      targetPos.current.set(0, -1.6, 1.6).setLength(targetDistance);
     } else {
-      // Centered top-down 2D position
-      targetPos.current.set(0, 0, 2.0);
+      targetPos.current.set(0, 0, targetDistance);
     }
-  }, [is3D]);
+  }, [is3D, cameraZoom]);
 
   useEffect(() => {
     if (cameraPreset) {
       setTimeout(() => setIsTransitioning(true), 0);
+      const targetDistance = (is3D ? 2.2627 : 2.0) / cameraZoom;
       if (cameraPreset === 'top') {
-        targetPos.current.set(0, 0, 2.0);
+        targetPos.current.set(0, 0, 2.0 / cameraZoom);
       } else if (cameraPreset === 'isometric') {
-        targetPos.current.set(0, -1.6, 1.6);
+        targetPos.current.set(0, -1.6, 1.6).setLength(targetDistance);
       } else if (cameraPreset === 'low') {
-        // Dramatic low angle looking slightly up from the edge of the plate
-        targetPos.current.set(0, -1.9, 0.4);
+        targetPos.current.set(0, -1.9, 0.4).setLength(targetDistance);
       }
       setCameraPreset(null);
     }
-  }, [cameraPreset, setCameraPreset]);
+  }, [cameraPreset, setCameraPreset, is3D, cameraZoom]);
 
   useFrame((_, delta) => {
     if (!is3D || isTransitioning) {
@@ -411,6 +669,23 @@ const CameraController = ({ is3D }: { is3D: boolean }) => {
           // Sync OrbitControls target
           controlsRef.current.target.set(0, 0, 0);
           controlsRef.current.update();
+        }
+      }
+    } else {
+      // If we are in 3D and OrbitControls is active, but the user moved the Zoom slider:
+      if (zoomTransitionActiveRef.current) {
+        const targetDistance = 2.2627 / cameraZoom;
+        const offset = new THREE.Vector3().copy(camera.position); // Target is (0,0,0)
+        const currentDistance = offset.length();
+        if (Math.abs(currentDistance - targetDistance) < 0.01) {
+          zoomTransitionActiveRef.current = false;
+        } else {
+          const newDistance = THREE.MathUtils.lerp(currentDistance, targetDistance, 10 * delta);
+          offset.setLength(newDistance);
+          camera.position.copy(offset);
+          if (controlsRef.current) {
+            controlsRef.current.update();
+          }
         }
       }
     }
@@ -444,6 +719,9 @@ export const CymaticCanvas: React.FC = () => {
     window.addEventListener('resize', checkDevice);
     return () => window.removeEventListener('resize', checkDevice);
   }, [setIsMobile]);
+
+  const isRecording = useAppStore((state) => state.isRecording);
+  const recordingAspect = useAppStore((state) => state.recordingAspect);
 
   return (
     <div className="w-full h-full absolute inset-0 z-0 bg-[#020202]">
@@ -486,6 +764,52 @@ export const CymaticCanvas: React.FC = () => {
           </EffectComposer>
         </Suspense>
       </Canvas>
+
+      {/* Recording Aspect Ratio Mask Overlay */}
+      {isRecording && (
+        <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center overflow-hidden">
+          {recordingAspect === '9:16' && (
+            <div className="h-full aspect-[9/16] max-w-full relative border-x border-dashed border-red-500/30 shadow-[0_0_50px_rgba(239,68,68,0.1)] flex items-center justify-center">
+              {/* Outer Masks */}
+              <div className="absolute top-0 bottom-0 right-full w-screen bg-black/60 backdrop-blur-[1px] border-r border-zinc-800/40" />
+              <div className="absolute top-0 bottom-0 left-full w-screen bg-black/60 backdrop-blur-[1px] border-l border-zinc-800/40" />
+              {/* Recording studio corner markers */}
+              <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-red-500/40" />
+              <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-red-500/40" />
+              <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-red-500/40" />
+              <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-red-500/40" />
+            </div>
+          )}
+          {recordingAspect === '1:1' && (
+            <div className="max-h-full max-w-full aspect-square w-[100vh] h-[100vw] relative border border-dashed border-red-500/30 shadow-[0_0_50px_rgba(239,68,68,0.1)] flex items-center justify-center">
+              {/* Outer Masks */}
+              <div className="absolute top-0 bottom-0 right-full w-screen bg-black/60 backdrop-blur-[1px] border-r border-zinc-800/40" />
+              <div className="absolute top-0 bottom-0 left-full w-screen bg-black/60 backdrop-blur-[1px] border-l border-zinc-800/40" />
+              <div className="absolute left-0 right-0 bottom-full h-screen bg-black/60 backdrop-blur-[1px] border-b border-zinc-800/40" />
+              <div className="absolute left-0 right-0 top-full h-screen bg-black/60 backdrop-blur-[1px] border-t border-zinc-800/40" />
+              {/* Recording studio corner markers */}
+              <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-red-500/40" />
+              <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-red-500/40" />
+              <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-red-500/40" />
+              <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-red-500/40" />
+            </div>
+          )}
+          {recordingAspect === '16:9' && (
+            <div className="max-h-full max-w-full aspect-[16/9] w-[100vw] h-[100vh] relative border border-dashed border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.05)]">
+              {/* Outer Masks */}
+              <div className="absolute top-0 bottom-0 right-full w-screen bg-black/60 backdrop-blur-[1px] border-r border-zinc-800/40" />
+              <div className="absolute top-0 bottom-0 left-full w-screen bg-black/60 backdrop-blur-[1px] border-l border-zinc-800/40" />
+              <div className="absolute left-0 right-0 bottom-full h-screen bg-black/60 backdrop-blur-[1px] border-b border-zinc-800/40" />
+              <div className="absolute left-0 right-0 top-full h-screen bg-black/60 backdrop-blur-[1px] border-t border-zinc-800/40" />
+              {/* Recording studio corner markers */}
+              <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-red-500/30" />
+              <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-red-500/30" />
+              <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-red-500/30" />
+              <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-red-500/30" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

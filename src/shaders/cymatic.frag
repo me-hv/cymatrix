@@ -41,6 +41,12 @@ uniform float uBassEnergy;
 uniform float uMidEnergy;
 uniform float uTrebleEnergy;
 
+uniform int uPlateShape;
+uniform float uPlateDamping;
+
+uniform sampler2D uFluidTexture;
+uniform float uFluidActive;
+
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vPosition;
@@ -119,6 +125,20 @@ float getRipple(float r, float t, float freq, float amp, float symAngle, float s
   return getWave((r + angularDistortion) * n * PI - t * 4.0 + phaseRad, type, smoothing);
 }
 
+float getPlateDistance(vec2 p) {
+  if (uPlateShape == 1) { // SQUARE
+    return max(abs(p.x), abs(p.y));
+  } else if (uPlateShape == 2) { // HEXAGON
+    vec2 q = abs(p);
+    return max(q.y, q.x * 0.8660254 + q.y * 0.5);
+  } else if (uPlateShape == 3) { // TRIANGLE
+    float ty = p.y + 0.25;
+    return max(abs(p.x) * 1.7320508 + ty, -2.0 * ty);
+  } else { // CIRCLE (0)
+    return length(p);
+  }
+}
+
 void main() {
   // Center coordinates to range -1.0 to 1.0
   vec2 st = vUv * 2.0 - 1.0;
@@ -128,14 +148,65 @@ void main() {
   float currentAspect = mix(aspect, 1.0, u3DActive);
   st.x *= currentAspect;
 
-  float r = length(st);
-  float a = atan(st.y, st.x);
+  float actualD = getPlateDistance(st);
 
+  // Discard pixels outside the plate shape boundary
+  if (actualD > 1.0) {
+    discard;
+  }
+
+  // Render a subtle 3D-shaded bezel/border at the edge of the shape
+  float bezelWidth = 0.08;
+  if (actualD > 1.0 - bezelWidth) {
+    // Let's create a nice metallic frame/bezel color
+    vec3 bezelColor = vec3(0.3, 0.32, 0.35); // base steel color
+    
+    // In metallic mode, make it extra shiny chrome/gold
+    if (uColorMode == 1) {
+      bezelColor = mix(uColorPeak * 1.5, vec3(0.8, 0.82, 0.85), 0.6);
+    } else {
+      bezelColor = mix(uColorAccent, vec3(0.5, 0.52, 0.55), 0.5);
+    }
+    
+    // Add 3D lighting shading on the bezel
+    vec3 viewDir = normalize(-vPosition);
+    vec3 normalVec = vNormal;
+    
+    // In 2D mode, the normalVec near the edge slopes because of bezelHeight.
+    // If not in 3D mode, we can fake a sloped normal for the bezel!
+    if (u3DActive < 0.05) {
+      // Fake a normal pointing outwards from the center
+      vec2 n2 = normalize(st);
+      // Slope the normal slightly up and outward
+      normalVec = normalize(vec3(n2 * 0.5, 0.866));
+    }
+    
+    // Simple diffuse and specular highlight on the bezel
+    vec3 lightPos = vec3(0.0, 0.0, 1.2);
+    vec3 pointLightDir = normalize(lightPos - vPosition);
+    float pointDiffuse = max(0.0, dot(normalVec, pointLightDir));
+    
+    bezelColor = bezelColor * (0.3 + 0.7 * pointDiffuse);
+    
+    // Add a dark line at the inner edge of the bezel to separate it from the pattern
+    float innerEdge = smoothstep(1.0 - bezelWidth, 1.0 - bezelWidth + 0.01, actualD);
+    bezelColor *= mix(0.4, 1.0, innerEdge);
+    
+    // Fade to black right at the outer edge
+    float outerFade = smoothstep(1.0, 0.98, actualD);
+    bezelColor *= outerFade;
+    
+    gl_FragColor = vec4(bezelColor, 1.0);
+    return;
+  }
+
+  // Check view modes (wireframe and points) for rendering inside the shape
   if (uViewMode == 1) {
     vec3 electricCyan = vec3(0.0, 0.9, 1.0);
     vec3 deepBlue = vec3(0.05, 0.2, 0.95);
     vec3 deepPurple = vec3(0.45, 0.05, 0.9);
     
+    float r = length(st);
     vec3 wireColor = mix(electricCyan, deepBlue, smoothstep(0.2, 0.8, r));
     wireColor = mix(wireColor, deepPurple, vIntensity * 0.5 + 0.5);
     wireColor *= uBrightness;
@@ -149,6 +220,7 @@ void main() {
     vec3 electricCyan = vec3(0.0, 0.9, 1.0);
     vec3 deepPurple = vec3(0.45, 0.05, 0.9);
     
+    float r = length(st);
     vec3 starColor = mix(electricCyan, deepPurple, vIntensity * 0.5 + 0.5);
     starColor *= uBrightness;
     // Fade out at edges to merge into pitch black background
@@ -156,6 +228,17 @@ void main() {
     gl_FragColor = vec4(starColor, 1.0);
     return;
   }
+
+  // Apply boundary reflection (mirror fold at 0.82)
+  float reflectBoundary = 0.82;
+  vec2 waveSt = st;
+  if (actualD > reflectBoundary) {
+    float fold = 2.0 * reflectBoundary - actualD;
+    waveSt = st * (fold / actualD);
+  }
+
+  float r = length(waveSt);
+  float a = atan(waveSt.y, waveSt.x);
 
   // Apply radial symmetry (Mandala reflection)
   float sector = 2.0 * PI / uSymmetry;
@@ -211,14 +294,24 @@ void main() {
     }
   }
 
-  // 1. Apply circular mask to contain displacement and prevent corner tearing
-  float mask = clamp(1.0 - smoothstep(0.85, 1.0, r), 0.0, 1.0);
+  // Apply material damping spatial decay based on actual distance
+  val *= exp(-uPlateDamping * actualD);
+
+  // Apply plate shape mask (fade out before bezel starts at 0.9)
+  float mask = clamp(1.0 - smoothstep(0.85, 0.92, actualD), 0.0, 1.0);
   val *= mask;
 
-  // 2. Apply organic S-curve rounding to smooth the peaks and valleys
+  // Sample fluid texture: V chemical is in the green channel
+  float fluidVal = texture2D(uFluidTexture, vUv).g;
+  float fluidDisplacement = (fluidVal * 2.0 - 1.0) * mask;
+  
+  // Blend procedural and fluid value
+  val = mix(val, fluidDisplacement, uFluidActive);
+
+  // Apply organic S-curve rounding to smooth the peaks and valleys
   val = smoothstep(0.0, 1.0, val * 0.5 + 0.5) * 2.0 - 1.0;
 
-  // 3. Clamp final displacement to prevent extreme jagged spikes
+  // Clamp final displacement to prevent extreme jagged spikes
   val = clamp(val, -1.0, 1.0);
 
   // Calculate line thickness and glow based on maximum active amplitude

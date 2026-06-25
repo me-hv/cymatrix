@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type VisMode = 'mandala' | 'chladni' | 'ripple';
+export type VisMode = 'mandala' | 'chladni' | 'ripple' | 'fluid';
 
 export interface Preset {
   name: string;
@@ -97,6 +97,28 @@ interface AppState {
   trackDuration: number;
   trackProgress: number;
 
+  // Video Recording
+  isRecording: boolean;
+  recordingElapsed: number;
+  recordingAspect: '16:9' | '9:16' | '1:1';
+  recordingStatus: 'idle' | 'recording' | 'processing' | 'done';
+
+  // Plate Settings
+  plateShape: 'circle' | 'square' | 'hexagon' | 'triangle';
+  plateDamping: number;
+  plateMaterial: 'steel' | 'brass' | 'rubber' | 'custom';
+
+  // Fluid Settings
+  fluidViscosity: number;
+  fluidity: number;
+  fluidGrowthRate: number;
+
+  // Immersive Mode & Camera settings
+  showBottomPanel: boolean;
+  zenMode: boolean;
+  cameraZoom: number;
+  prevUIState: { left: boolean; right: boolean; bottom: boolean } | null;
+
   // Polyphonic Oscillator State
   oscA: OscillatorConfig;
   oscB: OscillatorConfig;
@@ -150,6 +172,19 @@ interface AppState {
   setTrackDuration: (d: number) => void;
   setTrackProgress: (p: number) => void;
 
+  setIsRecording: (r: boolean) => void;
+  setRecordingElapsed: (e: number) => void;
+  setRecordingAspect: (a: '16:9' | '9:16' | '1:1') => void;
+  setRecordingStatus: (s: 'idle' | 'recording' | 'processing' | 'done') => void;
+
+  setPlateShape: (shape: 'circle' | 'square' | 'hexagon' | 'triangle') => void;
+  setPlateDamping: (damping: number) => void;
+  setPlateMaterial: (material: 'steel' | 'brass' | 'rubber' | 'custom') => void;
+
+  setFluidViscosity: (v: number) => void;
+  setFluidity: (f: number) => void;
+  setFluidGrowthRate: (g: number) => void;
+
   setOscA: (config: Partial<OscillatorConfig>) => void;
   setOscB: (config: Partial<OscillatorConfig>) => void;
   setOscC: (config: Partial<OscillatorConfig>) => void;
@@ -167,6 +202,10 @@ interface AppState {
   updateSweep: (delta: number) => void;
   setHarmonicInterval: (interval: 'fifth' | 'third' | 'octave') => void;
   setSweepFrequencies: (freqs: { oscA: number; oscB: number; oscC: number; sweepDirection: number }) => void;
+  loadDnaState: (loadedState: Partial<AppState>) => void;
+  setShowBottomPanel: (show: boolean) => void;
+  setZenMode: (zenMode: boolean) => void;
+  setCameraZoom: (zoom: number) => void;
 }
 
 const DEFAULT_STATE = {
@@ -206,6 +245,22 @@ const DEFAULT_STATE = {
   trackDuration: 0,
   trackProgress: 0,
 
+  // Video Recording Defaults
+  isRecording: false,
+  recordingElapsed: 0,
+  recordingAspect: '16:9' as const,
+  recordingStatus: 'idle' as const,
+
+  // Plate Settings Defaults
+  plateShape: 'circle' as const,
+  plateDamping: 0.1,
+  plateMaterial: 'steel' as const,
+
+  // Fluid Settings Defaults
+  fluidViscosity: 1.0,
+  fluidity: 0.5,
+  fluidGrowthRate: 1.0,
+
   oscA: { enabled: true, frequency: 440, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
   oscB: { enabled: false, frequency: 660, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
   oscC: { enabled: false, frequency: 880, gain: 0.5, type: 'sine' as const, detune: 0, phase: 0, lfoEnabled: false, lfoRate: 1.0 },
@@ -219,6 +274,10 @@ const DEFAULT_STATE = {
   sweepMode: 'loop' as const,
   bookmarks: [] as ResonanceBookmark[],
   autoSaveOnPin: false,
+  showBottomPanel: true,
+  zenMode: false,
+  cameraZoom: 1.0,
+  prevUIState: null as { left: boolean; right: boolean; bottom: boolean } | null,
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -261,6 +320,26 @@ export const useAppStore = create<AppState>((set) => ({
   setUploadedFileName: (uploadedFileName) => set({ uploadedFileName }),
   setTrackDuration: (trackDuration) => set({ trackDuration }),
   setTrackProgress: (trackProgress) => set({ trackProgress }),
+
+  setIsRecording: (isRecording) => set({ isRecording }),
+  setRecordingElapsed: (recordingElapsed) => set({ recordingElapsed }),
+  setRecordingAspect: (recordingAspect) => set({ recordingAspect }),
+  setRecordingStatus: (recordingStatus) => set({ recordingStatus }),
+
+  setPlateShape: (plateShape) => set({ plateShape }),
+  setPlateDamping: (plateDamping) => set({ plateDamping, plateMaterial: 'custom' }),
+  setPlateMaterial: (plateMaterial) => set((state) => {
+    if (plateMaterial === 'custom') return { plateMaterial };
+    const dampingMap = { steel: 0.1, brass: 0.6, rubber: 2.0 };
+    return {
+      plateMaterial,
+      plateDamping: dampingMap[plateMaterial] ?? state.plateDamping
+    };
+  }),
+
+  setFluidViscosity: (fluidViscosity) => set({ fluidViscosity }),
+  setFluidity: (fluidity) => set({ fluidity }),
+  setFluidGrowthRate: (fluidGrowthRate) => set({ fluidGrowthRate }),
   
   applyPreset: (presetName) => {
     const preset = PRESETS[presetName];
@@ -390,4 +469,37 @@ export const useAppStore = create<AppState>((set) => ({
     oscC: { ...state.oscC, frequency: freqs.oscC },
     frequency: freqs.oscA,
   })),
+  loadDnaState: (loadedState) => set((state) => {
+    const updates: Partial<AppState> = { ...loadedState };
+    if (loadedState.oscA) updates.oscA = { ...state.oscA, ...loadedState.oscA };
+    if (loadedState.oscB) updates.oscB = { ...state.oscB, ...loadedState.oscB };
+    if (loadedState.oscC) updates.oscC = { ...state.oscC, ...loadedState.oscC };
+    return updates;
+  }),
+  setShowBottomPanel: (showBottomPanel) => set({ showBottomPanel }),
+  setZenMode: (zenMode) => set((state) => {
+    if (zenMode) {
+      return {
+        zenMode: true,
+        prevUIState: {
+          left: state.isLeftSidebarOpen,
+          right: state.isRightSidebarOpen,
+          bottom: state.showBottomPanel,
+        },
+        isLeftSidebarOpen: false,
+        isRightSidebarOpen: false,
+        showBottomPanel: false,
+      };
+    } else {
+      const restore = state.prevUIState || { left: true, right: true, bottom: true };
+      return {
+        zenMode: false,
+        prevUIState: null,
+        isLeftSidebarOpen: restore.left,
+        isRightSidebarOpen: restore.right,
+        showBottomPanel: restore.bottom,
+      };
+    }
+  }),
+  setCameraZoom: (cameraZoom) => set({ cameraZoom }),
 }));

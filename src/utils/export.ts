@@ -124,3 +124,10 @@ export const exportSnapshot = (freqText: string, filename: string): Promise<void
     }
   });
 };
+
+/**
+ * Returns the active Three.js WebGL canvas element, if registered.
+ */
+export const getActiveCanvas = (): HTMLCanvasElement | null => {
+  return activeGl?.domElement ?? null;
+};
