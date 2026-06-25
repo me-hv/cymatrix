@@ -1,48 +1,71 @@
 # 🌌 Cymatrix: Real-Time Polyphonic Cymatics Visualizer
 
-**Cymatrix** is a high-performance, GPU-accelerated web application that visualizes sound frequencies as stunning, physics-inspired cymatic patterns and Chladni figures. 
+**Cymatrix** is a high-performance, GPU-accelerated web application that visualizes sound frequencies as stunning, physics-inspired cymatic patterns, Chladni figures, and organic fluid dynamics. 
 
-Built with **React, TypeScript, Three.js (React Three Fiber), and custom GLSL shaders**, it translates live audio inputs, pre-recorded audio files, or a complex multi-oscillator synthesizer into beautiful, symmetrical geometries in real time.
+Built with **React, TypeScript, Three.js (React Three Fiber), and custom WebGL GLSL shaders**, it translates live microphone inputs, uploaded audio files, or a complex multi-oscillator synthesizer into beautiful, symmetrical geometries and morphing chemical feedback loops in real time.
 
 ---
 
 ## 🚀 Core Features
 
-### 1. Polyphonic Synthesis Engine
+### 1. Polyphonic Synthesis & Audio Mixer
 * **Three Independent Oscillators**: Configure up to three separate oscillators (OSC A, OSC B, OSC C) concurrently.
 * **Complex Wave Interference**: The WebGL fragment shader calculates additive coordinate displacement for all active frequencies, producing complex, evolving geometric interference nodes and wave beats.
 * **Harmonic Interval Presets**: Quick options to set mathematical chord ratios relative to OSC A's pitch (Perfect Fifth, Major Third, Octave).
+* **Automatic Frequency Sweeper**: Automates sweeping frequencies over a custom range at adjustable speeds with loop or bounce modes.
 
-### 2. Dual-Sidebar Studio Layout
-* **Left Sidebar (Audio Generation)**: Dedicated to control and select sound sources, adjust individual oscillator volumes and frequencies, and trigger harmonic musical presets.
-* **Right Sidebar (Visual Controls & Settings)**: Dedicated to selecting visualization modes (Mandala, Chladni, Ripple), preset themes, and tweaking visual parameters like Symmetry, Damping, Line Thickness, Brightness, and speed.
-* **Minimalist UI & Corner Toggles**: Double menu icon headers (top-left and top-right) to toggle individual sidebars seamlessly, leaving maximum screen space for the WebGL canvas.
+### 2. External Audio Module & FFT Engine
+* **Multiple Input Sources**: Instantly switch between the internal **Mixer**, a live **Microphone** input, or an uploaded **MP3 File**.
+* **Live FFT Analysis**: Performs real-time Fourier analysis to partition audio into **Bass, Mids, and Treble** energy bands.
+* **Sound-to-Visual Mapping**: Different frequency bands dynamically drive pattern density, line glow, fluid turbulence, and 3D displacement.
 
-### 3. High-End GPU Rendering & Visuals
-* **Artistic Chladni, Mandala & Ripple Shaders**: Custom GLSL fragment shader utilizing polar coordinate transformations and mathematical formulas to render complex, overlapping symmetries.
-* **Normalized Wave Amplitude**: Automatic normalization prevents white-out or visual blowouts when multiple frequencies are activated together, ensuring high-contrast rendering.
-* **Realistic Post-Processing Bloom**: Powered by `@react-three/postprocessing` with custom intensity/threshold settings to deliver glowing, high-intensity neon lines that bleed into the surrounding darkness.
-* **Responsive Visual Mapping**:
-  * **Frequency** $\rightarrow$ Pattern Density & Harmonic Complexity.
-  * **Amplitude** $\rightarrow$ Line Thickness & Spatial Distortion.
-  * **Radius Gradient** $\rightarrow$ Smooth transition from white-hot cyan at the center to electric blue and deep cosmic purple at the edges.
+### 3. Plate Geometry & SDF Boundary Physics
+* **Geometric Surface Shapes**: Select between **Circle**, **Square**, **Hexagon**, or **Equilateral Triangle** plates.
+* **Signed Distance Fields (SDFs)**: Implements precise SDF mathematical cropping to enforce hard-clipping borders.
+* **Boundary Reflection Folding**: Folds coordinates as they approach boundaries to mimic standing waves reflecting off plate edges.
+* **Raised 3D Bezel Framing**: Calculates bezel height profiles to render a raised metallic border rim around the active shape.
+* **Material Damping Presets**: Presets representing physical plate damping (**Steel**, **Brass**, **Rubber**) with adjustable decay coefficients.
 
-### 4. High-Quality Snapshot Tool
-* **Export Creations**: Download a high-quality PNG of the current visual pattern.
-* **Frequency Overlay**: Renders the active frequencies (e.g. `A: 440.0Hz | B: 660.0Hz`) and app branding ('CYMATRIX') directly onto the bottom-right corner of the exported image.
-* **Dynamic File Naming**: Auto-generates filenames based on active frequencies (e.g. `cymatrix-snapshot-440hz-660hz.png`).
+### 4. Fluid Physics Mode (Reaction-Diffusion)
+* **Ping-Pong FBO Render Pipeline**: Employs two Frame Buffer Objects (`useFBO`) to feedback the previous frame's chemical state into the next, allowing patterns to evolve biologically.
+* **Gray-Scott Compute Simulation**: Solves the Reaction-Diffusion equations for two virtual chemicals ($U$ and $V$):
+  * $\partial U/\partial t = D_u \nabla^2 U - UV^2 + F(1-U)$
+  * $\partial V/\partial t = D_v \nabla^2 V + UV^2 - (F+K)V$
+* **Audio-to-Chemical Morphogenesis**: Frequencies map to Feed rate ($F$) and amplitude maps to Kill rate ($K$), forming spots, stripes, or moving worms dynamically.
+* **Interactive Mouse Stirring**: Dragging your cursor across the canvas injects chemicals, mimicking drops of ink dispersing in water.
 
-### 5. Interactive HUD & Spectrum Analyzer
-* **Bottom Panel Spectrum Analyzer**: Uses an HTML5 canvas rendering in an isolated `requestAnimationFrame` loop, bypassing React re-renders for maximum rendering performance (maintaining solid **60 FPS**).
-* **Live HUD Overlay**: Displays active FFT bin count, dominant frequency, and split-band energies (Bass, Mids, Treble).
+### 5. Professional Cinematic Color Grading
+* **Intensity-Based Gradient Mapping**: Maps displacement height values to color ramps rather than simple solid colors.
+* **Palette Presets Library**: Select between curated presets:
+  * `NEON`: High-intensity cyan, blue, and violet.
+  * `GOLD`: Sleek liquid gold, bronze, and obsidian steel.
+  * `SEA`: Luminous aquamarine, deep blue, and emerald accents.
+  * `THERMAL`: Infrared heat signature mapping.
+  * `MONO`: Minimalist monochrome grayscale.
+* **Color Controls**: Real-time adjustment of contrast, color shifts, and lens chromatic aberration fringing.
+
+### 6. Studio Video Export & Canvas Capture
+* **Cinematic Video Recording**: Captures the canvas output alongside synchronized stereo program audio using the `MediaRecorder` API.
+* **Aspect Ratio Framing**: Export in **16:9** (desktop), **9:16** (mobile stories), or **1:1** (posts).
+* **High-Bitrate Encoding**: Outputs high-quality WebM/MP4 streams encoded at 8Mbps.
+
+### 7. Preset 'DNA' Sharing & Deep Linking
+* **URL DNA Encoding**: Serializes the entire app configuration (oscillators, plate settings, color palettes, and zoom) into a compact, compressed, URL-safe Base64 string.
+* **Instant Hydration**: Clicking a shared link parses the query string on mount and populates the store instantly.
+* **Local Preset Library**: Save custom configuration configurations to browser `localStorage` with custom names, letting you load or delete presets.
+
+### 8. Immersive view & Camera Navigation
+* **Zen Mode**: Press the **Eye** icon or hit **ESC** to instantly hide all menus and panels for a pure full-screen visualizer view. Zen Mode remembers and restores your sidebar layouts automatically.
+* **Bottom Panel Toggle**: Toggle the real-time spectrum analyzer panel, sliding it smoothly off-screen.
+* **Smooth Camera Zoom**: Slide the camera distance smoothly using a slider or preset quick actions (**FIT** and **DETAIL**). In 3D OrbitControls, the zoom operates along the viewport camera angle without resetting your rotations.
 
 ---
 
 ## 🛠️ Tech Stack
 
 * **Framework**: React 19 + TypeScript
-* **Build Tool**: Vite
-* **WebGL & Rendering**: Three.js + `@react-three/fiber` + `@react-three/drei`
+* **Build Tool**: Vite + Rolldown
+* **WebGL Rendering**: Three.js + `@react-three/fiber` + `@react-three/drei`
 * **Shader Post-processing**: `@react-three/postprocessing` + `postprocessing`
 * **State Management**: Zustand
 * **Styling**: Tailwind CSS v4
@@ -50,30 +73,32 @@ Built with **React, TypeScript, Three.js (React Three Fiber), and custom GLSL sh
 
 ---
 
-## 📂 Architecture
+## 📂 Codebase Architecture
 
 ```bash
 src/
 ├── audio/
 │   └── AudioEngine.ts        # Handles Web Audio contexts, polyphonic oscillators, mic & file decode
 ├── components/
-│   ├── LeftSidebar.tsx       # Audio Generation panel (Mixer, sources, intervals)
-│   ├── RightSidebar.tsx      # Visual Inspector panel (Modes, visual sliders, presets, snapshot)
+│   ├── LeftSidebar.tsx       # Audio Mixer, LFO, Sweeper, source switchers, and Zen Mode toggle
+│   ├── RightSidebar.tsx      # View Settings, presets, sharing controls, plate setup, and sliders
 │   ├── ControlRow.tsx        # Decoupled precise slider + numeric text input row
 │   └── SpectrumAnalyzer.tsx  # HTML5 Canvas real-time FFT spectrum visualizer
 ├── shaders/
-│   ├── cymatic.frag          # GLSL fragment shader with polyphonic additive wave equations
-│   └── cymatic.vert          # GLSL vertex shader rendering full-screen quad
+│   ├── cymatic.frag          # GLSL fragment shader with polar Chladni formula & bezel mapping
+│   └── cymatic.vert          # GLSL vertex shader for 3D perspective terrain mesh displacement
 ├── store/
-│   └── useAppStore.ts        # Zustand UI & visualization global parameters store
+│   └── useAppStore.ts        # Zustand store managing visualizer modes, recordings, and camera zoom
 ├── utils/
-│   └── export.ts             # Snapshot export and 2D canvas text overlay overlay helper
+│   ├── dna.ts                # Base64 URL serialization and query param hydration utility
+│   ├── export.ts             # Snapshot export and 2D canvas text overlay overlay helper
+│   └── videoRecorder.ts      # Combines Web Audio destination stream and canvas capture for exports
 ├── visualization/
 │   ├── components/
-│   │   └── CymaticCanvas.tsx # R3F Canvas context, useFrame loops & Bloom composer
+│   │   └── CymaticCanvas.tsx # R3F Canvas context, OrbitControls, Camera controllers, and FBO ping-pong loops
 │   └── materials/
-│       └── CymaticMaterial.ts# Custom shader material definition and registration
-├── App.tsx                   # Main layout container & sidebar grid
+│       └── CymaticMaterial.ts# Custom shader material definition and uniforms registration
+├── App.tsx                   # Main layout container and Zen Mode layout managers
 └── main.tsx                  # React entry point
 ```
 
